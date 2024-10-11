@@ -51,6 +51,7 @@ class Sommerfeld:
         zph   = self.zph = r * np.sin (theta)
         rho [rho < 1e-7] = 1e-8
         zph [zph < 1e-7] = 0.0
+        self.is_hankel = self.zph < 2 * self.rho
 
         self.ck2sq = 4 * np.pi ** 2
         self.ck1sq = self.ck2sq * np.conjugate (self.epscf)
@@ -63,7 +64,7 @@ class Sommerfeld:
         self.ct3   = .0625 * (self.ck1sq ** 3 - self.ck2sq ** 3)
         # We do not define ck2 = 2*np.pi and ck1r = ck1.real
         # We also do not define JH which is 1 for the hankel form an 0
-        # for bessel
+        # for bessel, we use is_hankel above
     # end def __init__
 
     def evlua (erv, ezv, erh, eph):
@@ -71,7 +72,6 @@ class Sommerfeld:
             evaluation of the Sommerfeld integrals
         """
         dlt = np.max (self.zph, self.rho)
-        is_hankel = self.zph < 2 * self.rho
         cp1 = 0            +.8j * np.pi
         cp2 =  1.2 * np.pi -.4j * np.pi
         cp3 = 2.04 * np.pi -.4j * np.pi
