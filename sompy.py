@@ -90,11 +90,12 @@ class Sommerfeld:
     # end def gshank
 
     def rom1 (self, n, nx):
+        nm    = 1 << 17
         rx    = 1e-4
         lstep = 0
         z     = np.zeros (self.rho.shape)
         ze    = 1.
-        ep    = 1 / (1e4 * (1 << 17)) # for epsilon comparison
+        ep    = 1 / (1e4 * nm) # for epsilon comparison
         zend  = ze - ep
         sum   = np.zeros (self.rho.shape + (n,), dtype = complex)
         todo  = np.ones  (self.rho.shape, dtype = bool)
@@ -108,18 +109,21 @@ class Sommerfeld:
         # This used to be label 2
         while True:
             dz = 1 / ns
-            if z + dz > ze:
-                dz = ze - z
-                if dz < ep:
-                    break
-            dzot = dz * .5
-            g3 = self.saoa (z + dzot)
-            g5 = self.saoa (z + dz)
+            cnd = z + dz > ze
+            dz [cnd] = (ze - z) [cnd]
+            todo [dz < ep] = False
+            if not todo.any ():
+                break
+            dzot  = dz * .5
+            dzotn = dzot [..., np.newaxis]
+            g3 [todo] = self.saoa ((z + dzot) [todo])
+            g5 [todo] = self.saoa ((z + dz) [todo])
             # This used to be label 4
-            while todo.any ():
+            ngo2 = todo
+            while ngo2.any ():
                 nogo = np.zeros (g3.shape, dtype = bool)
-                t00 = (g1 + g5) * dzot
-                t01 = (t00 + dz * g3) * .5
+                t00 = (g1 + g5) * dzotn
+                t01 = (t00 + dz [..., np.newaxis] * g3) * .5
                 t10 = (4 * t01 - t00) / 3
                 # test convergence of 3 point romberg result
                 tri = self.test (t01, t10, 0.)
@@ -132,10 +136,10 @@ class Sommerfeld:
                 # It won't do anything if the prev produced nogo=0
                 g2 [ngo] = self.saoa (z + dz * .25, ngo)
                 g4 [ngo] = self.saoa (z + dz * .75, ngo)
-                t02 = np.zeros (t01.shape)
-                t11 = np.zeros (t01.shape)
-                t20 = np.zeros (t01.shape)
-                t02 [ngo] = (t01 [ngo] + dzot * (g2 + g4)) [ngo] * .5
+                t02 = np.zeros (t01.shape, dtype = complex)
+                t11 = np.zeros (t01.shape, dtype = complex)
+                t20 = np.zeros (t01.shape, dtype = complex)
+                t02 [ngo] = (t01 [ngo] + dzotn * (g2 + g4)) [ngo] * .5
                 t11 [ngo] = ( 4 * t02 [ngo] - t01 [ngo]) / 3
                 t20 [ngo] = (16 * t11 [ngo] - t10 [ngo]) / 15
                 nogo2 = np.zeros (g3.shape, dtype = bool)
@@ -148,28 +152,32 @@ class Sommerfeld:
                 sum [go] = sum [go] + t20 [go]
                 nt  [go] = nt  [go] + 1
 
+                if ngo2.any:
+                    u, c = np.unique (ngo2, return_counts = True)
+                    d = dict (zip (u, c))
+                    print ('ngo2: %d' % d [True])
                 # Here the ngo2 part should be handled (goto 13)
-                import pdb; pdb.set_trace ()
-                nt = 0
-                if ns < nm:
-                    ns = ns * 2
-                    dz = 1 / ns
-                    dzot = dz * .5
-                    #g5 [] = g3 [] # fixme
-                    #g3 [] = g2 [] # fixme
-                    # goto 4 ??
-                # The part in 'if lstep' is an error message where we
-                # would produce incorrect results. We raise an exception.
-                t00 = self.a + (self.b - self.a) * z
-                raise ValueError ('rom1: step size limited at lambda: %s' % t00)
+                if (ngo2 & (ns >= nm)).any ():
+                    # The part in 'if lstep' is an error message where we
+                    # would produce incorrect results. We raise an exception.
+                    raise ValueError \
+                        ( 'rom1: step size limited at a=%s, b=%s'
+                        % (self.a, self.b)
+                        )
+                nt [ngo2 ] = 0
+                ns [ngo2] = ns [ngo2] * 2
+                dz [ngo2] = 1 / ns [ngo2]
+                dzot [ngo2] = dz [ngo2] * .5
+                dzotn = dzot [..., np.newaxis]
+                g5 [ngo2] = g3 [ngo2]
+                g3 [ngo2] = g2 [ngo2]
             z = z + dz
-            if z > zend:
-                # we might return here, was goto 17
+            if (z > zend).all ():
                 break
             g1 = g5
-            if nt >= 4 and ns > nx:
-                ns = ns / 2
-                nt = 1
+            cnd = (nt >= 4) & (ns > nx)
+            ns [cnd] = ns [cnd] / 2
+            nt [cnd] = 1
             # implicit continue here (goto 2)
     # end def rom1
 
