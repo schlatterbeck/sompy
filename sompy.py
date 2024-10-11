@@ -90,108 +90,115 @@ class Sommerfeld:
     # end def gshank
 
     def rom1 (self, n, nx):
-        nm    = 1 << 17
-        nts   = 4
         rx    = 1e-4
         lstep = 0
-        z     = 0.
+        z     = np.zeros (self.rho.shape)
         ze    = 1.
-        s     = 1.
-        ep    = s / (1e4 * nm)
+        ep    = 1 / (1e4 * (1 << 17)) # for epsilon comparison
         zend  = ze - ep
-        sum   = np.zeros (self.rho.shape + (n,))
-        ns    = nx
+        sum   = np.zeros (self.rho.shape + (n,), dtype = complex)
+        todo  = np.ones  (self.rho.shape, dtype = bool)
+        ns    = np.ones  (self.rho.shape, dtype = int) * nx
         nt    = np.zeros (self.rho.shape)
         g1    = self.saoa (z)
-        g2    = np.zeros (g1.shape)
-        g3    = np.zeros (g1.shape)
-        g4    = np.zeros (g1.shape)
-        g5    = np.zeros (g1.shape)
+        g2    = np.zeros (g1.shape, dtype = complex)
+        g3    = np.zeros (g1.shape, dtype = complex)
+        g4    = np.zeros (g1.shape, dtype = complex)
+        g5    = np.zeros (g1.shape, dtype = complex)
+        # This used to be label 2
         while True:
-            dz = s / ns
+            dz = 1 / ns
             if z + dz > ze:
                 dz = ze - z
                 if dz < ep:
                     break
             dzot = dz * .5
-            g3 = saoa (z + dzot)
-            g5 = saoa (z + dz)
-            #while something:
-            nogo = np.zeros (g3.shape, dtype = bool)
-            t00 = (g1 + g5) * dzot
-            t01 = (t00 + dz * g3) * .5
-            t10 = (4 * t01 - t00) / 3
-            # test convergence of 3 point romberg result
-            tri = test (t01, t10, 0.)
-            # FIXME: nogo must be the *or* of all 6 conditions
-            nogo [np.logical_or (tri.real > rx, tri.imag > rx)] = 1
-            # FIXME: And here we again need a nogo with dimension added
-            go = np.logical_not (nogo)
-            sum [go] = sum [go] + t10 [go]
-            nt [go]  = nt [go] + 2
-            # This should only be called for nogo == 1:
-            if 1:
-                g2 [nogo] = self.saoa (z + dz * .25, nogo)
-                g4 [nogo] = self.saoa (z + dz * .75, nogo)
-                t02 [nogo] = (t01 [nogo] + dzot * (g2 + g4)) [nogo] * .5
-                t11 [nogo] = ( 4 * t02 [nogo] - t01 [nogo]) / 3
-                t20 [nogo] = (16 * t11 [nogo] - t10 [nogo]) / 15
+            g3 = self.saoa (z + dzot)
+            g5 = self.saoa (z + dz)
+            # This used to be label 4
+            while todo.any ():
+                nogo = np.zeros (g3.shape, dtype = bool)
+                t00 = (g1 + g5) * dzot
+                t01 = (t00 + dz * g3) * .5
+                t10 = (4 * t01 - t00) / 3
+                # test convergence of 3 point romberg result
+                tri = self.test (t01, t10, 0.)
+                nogo [(tri.real > rx) | (tri.imag > rx)] = 1
+                ngo = np.sum (nogo, axis = 1, dtype = bool)
+                go  = np.logical_not (ngo)
+                sum [go] = sum [go] + t10 [go]
+                nt  [go] = nt  [go] + 2
+                # This is only be called for ngo == 1:
+                # It won't do anything if the prev produced nogo=0
+                g2 [ngo] = self.saoa (z + dz * .25, ngo)
+                g4 [ngo] = self.saoa (z + dz * .75, ngo)
+                t02 = np.zeros (t01.shape)
+                t11 = np.zeros (t01.shape)
+                t20 = np.zeros (t01.shape)
+                t02 [ngo] = (t01 [ngo] + dzot * (g2 + g4)) [ngo] * .5
+                t11 [ngo] = ( 4 * t02 [ngo] - t01 [ngo]) / 3
+                t20 [ngo] = (16 * t11 [ngo] - t10 [ngo]) / 15
                 nogo2 = np.zeros (g3.shape, dtype = bool)
                 # test convergence of 5 point romberg result
                 tri = np.zeros (g3.shape, dtype = complex)
-                tri [nogo] = test (t11 [nogo], t20 [nogo], 0.)
-                nogo2 [np.logical_or (tri.real > rx, tri.imag > rx)] = 1
-                go = np.logical_not (nogo2)
+                tri [ngo] = self.test (t11 [ngo], t20 [ngo], 0.)
+                nogo2 [(tri.real > rx) | (tri.imag > rx)] = 1
+                ngo2 = np.sum (nogo2, axis = 1, dtype = bool)
+                go   = np.logical_not (ngo2)
                 sum [go] = sum [go] + t20 [go]
-                nt [go] = nt [go] + 1
-                # Here the nogo2 part should be handled (goto 13)
+                nt  [go] = nt  [go] + 1
+
+                # Here the ngo2 part should be handled (goto 13)
+                import pdb; pdb.set_trace ()
                 nt = 0
-                if ns < np: #hMMM goto 15
+                if ns < nm:
                     ns = ns * 2
-                    dz = s / ns
+                    dz = 1 / ns
                     dzot = dz * .5
                     #g5 [] = g3 [] # fixme
                     #g3 [] = g2 [] # fixme
                     # goto 4 ??
-                if lstep != 1:
-                    lstep = 1
-                    # Hmpf. printint. defer to end
-                    # hmpf lambda?
-                    #t00, t11 = ...
-                    #print t00
-                    #print z, dz, self.a, self.b
-                    #for g in range (len (g1)):
+                # The part in 'if lstep' is an error message where we
+                # would produce incorrect results. We raise an exception.
+                t00 = self.a + (self.b - self.a) * z
+                raise ValueError ('rom1: step size limited at lambda: %s' % t00)
             z = z + dz
             if z > zend:
-                # we might return here
+                # we might return here, was goto 17
                 break
-            #g1 [..] = g5 [..] # FIXME
-            if nt >= nts and ns > nx:
+            g1 = g5
+            if nt >= 4 and ns > nx:
                 ns = ns / 2
                 nt = 1
             # implicit continue here (goto 2)
     # end def rom1
 
-    def saoa (self, t, cond = True):
+    def saoa (self, t, cond = None):
         """ Computes the integrand for each of the 6 Sommerfeld
             integrals for source and observer above ground
             The is_hankel boolean matrix indicates which of the elements
             should be computed with the hankel variant.
         """
-        is_hankel = np.logical_and (self.is_hankel, cond)
-        is_bessel = np.logical_and (np.logical_not (self.is_hankel), cond)
+        if cond is None:
+            cond = np.ones (self.is_hankel.shape, dtype = bool)
+        if self.is_hankel.shape != cond.shape:
+            import pdb; pdb.set_trace ()
+        is_hankel = self.is_hankel & cond
+        is_bessel = np.logical_not (self.is_hankel) & cond
         dxl = (self.b - self.a)
         xl  = self.a + dxl * t
         cgam1 = np.zeros (self.is_hankel.shape, dtype = complex)
         cgam2 = np.zeros (self.is_hankel.shape, dtype = complex)
         b0    = np.zeros (self.is_hankel.shape, dtype = complex)
         b0p   = np.zeros (self.is_hankel.shape, dtype = complex)
-        b, bp, cg1, cg2 = self.saoa_bessel (xl, self.rho [is_bessel])
+        b, bp, cg1, cg2 = self.saoa_bessel \
+            (xl [is_bessel], self.rho [is_bessel])
         cgam1 [is_bessel] = cg1
         cgam2 [is_bessel] = cg2
         b0    [is_bessel] = b
         b0p   [is_bessel] = bp
-        b, bp, cg1, cg2 = self.saoa_hankel (xl, self.rho [is_hankel])
+        b, bp, cg1, cg2 = self.saoa_hankel \
+            (xl [is_hankel], self.rho [is_hankel])
         cgam1 [is_hankel] = cg1
         cgam2 [is_hankel] = cg2
         b0    [is_hankel] = b
@@ -200,21 +207,23 @@ class Sommerfeld:
         cgam2 = cgam2 [cond]
         b0    = b0    [cond]
         b0p   = b0p   [cond]
+        xl    = xl [cond]
         xlr  = xl * np.conjugate (xl)
-        dgam = None
-        if xlr < self.tsmag:
-            dgam = cgam2 - cgam1
-        elif xl.imag < 0:
-            sign = 1
-        elif xl.real < 2 * np.pi:
-            sign = -1
-        elif x.real > self.ck1.real:
-            sign = 1
-        else:
-            dgam = cgam2 - cgam1
-        if dgam is None:
-            xxl  = 1 / (xl * xl)
-            dgam = sign * ((self.ct3 * xxl + self.ct2) * xxl + self.ct1) / xl
+        dgam = np.zeros (xlr.shape, dtype = complex)
+        dgam [xlr < self.tsmag] = cgam2 - cgam1
+        sign = np.ones (xlr.shape, dtype = bool)
+        sign [xlr < self.tsmag] = 0
+        sign [(xl.imag >= 0) & (xl.real < 2 * np.pi)] = -1
+        cnd = (sign == 1) & (xl.real <= self.ck1.real)
+        dgam [cnd] = cgam2 [cnd] - cgam1 [cnd]
+        sign [cnd] = 0
+        cnd = (sign != 0)
+        xxl = (1 / (xl * xl)) [cnd]
+        dgam [cnd] = \
+            ( sign [cnd]
+            * ((self.ct3 * xxl + self.ct2) * xxl + self.ct1)
+            / xl [cnd]
+            )
         den2 = self.cksm * dgam \
              / (cgam2 * (self.ck1sq * cgam2 + self.ck2sq * cgam1))
         den1 = 1 / (cgam1 + cgam2) - self.cksm / cgam2
@@ -226,10 +235,12 @@ class Sommerfeld:
         ans [3] = np.zeros (ans [5].shape)
         nr0  = self.rho [cond] != 0
         r0   = np.logical_not (nr0)
-        ans [0][r0] = ans [3][r0] = -com [r0] * xl * xl * .5
+        xxl = xl [r0] * xl [r0] * .5
+        ans [0][r0] = ans [3][r0] = -com [r0] * xxl
         b0p [nr0] = b0p [nr0] / self.rho [cond][nr0]
-        ans [0][nr0] = -com [nr0] * xl * (b0p [nr0] + b0 [nr0] * xl)
-        ans [3][nr0] = com [nr0] * xl * b0p [nr0]
+        xxl = xl [nr0]
+        ans [0][nr0] = -com [nr0] * xxl * (b0p [nr0] + b0 [nr0] * xxl)
+        ans [3][nr0] = com [nr0] * xxl * b0p [nr0]
         ans [1] = com * cgam2 * cgam2 * b0
         ans [2] = -ans [3] * cgam2 * self.rho [cond]
         ans [4] = com * b0
@@ -241,10 +252,10 @@ class Sommerfeld:
         b0p   = -2 * bessel (1, xl * rho)
         cgam1 = np.sqrt (xl * xl - self.ck1sq)
         cgam2 = np.sqrt (xl * xl - self.ck2sq)
-        if cgam1.real == 0:
-            cgam1 = 0 - 1j * np.abs (cgam1.imag)
-        if cgam2.real == 0:
-            cgam2 = 0 - 1j * np.abs (cgam2.imag)
+        cond  = cgam1.real == 0
+        cgam1 [cond] = 0 - 1j * np.abs (cgam1 [cond].imag)
+        cond  = cgam2.real == 0
+        cgam2 [cond] = 0 - 1j * np.abs (cgam2 [cond].imag)
         return b0, b0p, cgam1, cgam2
     # end def saoa_bessel
 
@@ -253,25 +264,27 @@ class Sommerfeld:
         b0p   = -hankel (1, xl * rho)
         com   = xl - self.ck1
         cgam1 = np.sqrt (xl + self.ck1) * np.sqrt (com)
-        if com.real < 0 and com.imag > 0:
-            cgam1 = -cgam1
+        cond = (com.real < 0) & (com.imag > 0)
+        cgam1 [cond] = -cgam1 [cond]
         com   = xl - 2 * np.pi
         cgam2 = np.sqrt (xl + 2 * np.pi) * np.sqrt (com)
-        if com.real < 0 and com.imag > 0:
-            cgam2 = -cgam2
+        cond = (com.real < 0) & (com.imag > 0)
+        cgam2 [cond] = -cgam2 [cond]
         return b0, b0p, cgam1, cgam2
     # end def saoa_hankel
 
     def test (self, f1, f2, dmin):
-        den = np.abs (f2r)
-        tr  = np.abs (f2i)
+        den = np.abs (f2.real)
+        tr  = np.abs (f2.imag)
         ti  = np.zeros (tr.shape, dtype = float)
         den [den < tr]   = tr [den < tr]
         den [den < dmin] = dmin
-        tr [den >= 1e-37] = np.abs ((f1.real - f2.real) / den)
-        ti [den >= 1e-37] = np.abs ((f1.imag - f2.imag) / den)
-        tr [den < 1e-37] = 0
-        ti [den < 1e-37] = 0
+        cond = den >= 1e-37
+        tr [cond] = np.abs ((f1.real [cond] - f2.real [cond]) / den [cond])
+        ti [cond] = np.abs ((f1.imag [cond] - f2.imag [cond]) / den [cond])
+        cond = np.logical_not (cond)
+        tr [cond] = 0
+        ti [cond] = 0
         return tr + 1j * ti
     # end def test
 

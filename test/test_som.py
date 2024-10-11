@@ -29,7 +29,8 @@ class Test_Base:
         s.b = 3.76991153 -1.2566371j
         cond = np.zeros (s.rho.shape, dtype = bool)
         cond [1] = cond [11] = 1
-        r = s.saoa (0, cond = cond)
+        t = np.zeros (s.rho.shape)
+        r = s.saoa (t, cond = cond)
         assert r.shape == vals.shape
         assert r == pytest.approx (vals, rel = 1e-5)
     # end def test_saoa_hankel
@@ -58,13 +59,25 @@ class Test_Base:
         cond = np.zeros (s.rho.shape, dtype = bool)
         cond [71] = 1
         result = []
-        r = s.saoa (.25, cond = cond)
+        t = np.ones (s.rho.shape) * .25
+        r = s.saoa (t, cond = cond)
         result.append (r [0])
-        r = s.saoa (.5, cond = cond)
+        r = s.saoa (t * 2, cond = cond)
         result.append (r [0])
         result = np.array (result)
         assert result.shape == vals.shape
         assert result == pytest.approx (vals, rel = 1e-5)
     # end def test_saoa_bessel
+
+    def test_rom1 (self):
+        s = Sommerfeld (4.0, .001, 10.0)
+        s.a = 2.51327419j
+        s.b = 3.76991153 -1.2566371j
+        cond = np.zeros (s.rho.shape, dtype = bool)
+        cond [1] = cond [71] = 1
+        r = s.rom1 (6, 2)
+        r = r [cond]
+        import pdb;pdb.set_trace ()
+    # end def test_rom1
 
 # end class Test_Base
