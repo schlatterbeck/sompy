@@ -10,6 +10,8 @@ eps0 = 1e-12 / (c**2 * mu0)
 
 class Sommerfeld:
 
+    verbose = False
+
     def __init__ (self, eps_r, sigma = None, fmhz = None):
         """ The original implementation used the case where sigma < 0 to
             specify the imag component of eps_r directly (and ignore fmhz)
@@ -52,6 +54,7 @@ class Sommerfeld:
         rho [rho < 1e-7] = 1e-8
         zph [zph < 1e-7] = 0.0
         self.is_hankel = self.zph < 2 * self.rho
+        self.is_bessel = np.logical_not (self.is_hankel)
 
         self.ck2sq = 4 * np.pi ** 2
         self.ck1sq = self.ck2sq * np.conjugate (self.epscf)
@@ -89,47 +92,52 @@ class Sommerfeld:
         dlt  = dela
     # end def gshank
 
-    def rom1 (self, n, nx):
+    def rom1 (self, n, nx, todo):
         nm    = 1 << 17
         rx    = 1e-4
-        lstep = 0
         z     = np.zeros (self.rho.shape)
-        ze    = 1.
+        ze    = 1. # end of integration
         ep    = 1 / (1e4 * nm) # for epsilon comparison
         zend  = ze - ep
         sum   = np.zeros (self.rho.shape + (n,), dtype = complex)
-        todo  = np.ones  (self.rho.shape, dtype = bool)
+        todo  = np.array (todo, dtype = bool)
         ns    = np.ones  (self.rho.shape, dtype = int) * nx
         nt    = np.zeros (self.rho.shape)
-        g1    = self.saoa (z)
-        g2    = np.zeros (g1.shape, dtype = complex)
-        g3    = np.zeros (g1.shape, dtype = complex)
-        g4    = np.zeros (g1.shape, dtype = complex)
-        g5    = np.zeros (g1.shape, dtype = complex)
+        g1    = np.zeros (sum.shape, dtype = complex)
+        g1 [todo] = self.saoa (z, todo)
+        g2    = np.zeros (sum.shape, dtype = complex)
+        g3    = np.zeros (sum.shape, dtype = complex)
+        g4    = np.zeros (sum.shape, dtype = complex)
+        g5    = np.zeros (sum.shape, dtype = complex)
         # This used to be label 2
         while True:
             dz = 1 / ns
             cnd = z + dz > ze
-            dz [cnd] = (ze - z) [cnd]
-            todo [dz < ep] = False
+            dz [cnd] = (ze - z [cnd])
+            todo [dz <= ep] = False
             if not todo.any ():
                 break
             dzot  = dz * .5
             dzotn = dzot [..., np.newaxis]
-            g3 [todo] = self.saoa ((z + dzot) [todo])
-            g5 [todo] = self.saoa ((z + dz) [todo])
+            g3 [todo] = self.saoa ((z + dzot), todo)
+            g5 [todo] = self.saoa ((z + dz), todo)
             # This used to be label 4
             ngo2 = todo
             while ngo2.any ():
-                nogo = np.zeros (g3.shape, dtype = bool)
-                t00 = (g1 + g5) * dzotn
-                t01 = (t00 + dz [..., np.newaxis] * g3) * .5
-                t10 = (4 * t01 - t00) / 3
+                nogo = np.zeros (g1.shape, dtype = bool)
+                t00  = np.zeros (g1.shape, dtype = complex)
+                t01  = np.zeros (g1.shape, dtype = complex)
+                t10  = np.zeros (g1.shape, dtype = complex)
+                t00 [ngo2] = (g1 [ngo2] + g5 [ngo2]) * dzotn [ngo2]
+                t01 [ngo2] = ( t00 [ngo2]
+                             + dz [..., np.newaxis][ngo2] * g3 [ngo2]) * .5
+                t10 [ngo2] = (4 * t01 [ngo2] - t00 [ngo2]) / 3
                 # test convergence of 3 point romberg result
-                tri = self.test (t01, t10, 0.)
+                tri = np.zeros (g1.shape, dtype = complex)
+                tri [ngo2] = self.test (t01 [ngo2], t10 [ngo2], 0.)
                 nogo [(tri.real > rx) | (tri.imag > rx)] = 1
                 ngo = np.sum (nogo, axis = 1, dtype = bool)
-                go  = np.logical_not (ngo)
+                go  = np.logical_not (ngo) & ngo2
                 sum [go] = sum [go] + t10 [go]
                 nt  [go] = nt  [go] + 2
                 # This is only be called for ngo == 1:
@@ -139,20 +147,20 @@ class Sommerfeld:
                 t02 = np.zeros (t01.shape, dtype = complex)
                 t11 = np.zeros (t01.shape, dtype = complex)
                 t20 = np.zeros (t01.shape, dtype = complex)
-                t02 [ngo] = (t01 [ngo] + dzotn * (g2 + g4)) [ngo] * .5
+                t02 [ngo] = (t01 [ngo] + dzotn [ngo] * (g2 + g4) [ngo]) * .5
                 t11 [ngo] = ( 4 * t02 [ngo] - t01 [ngo]) / 3
                 t20 [ngo] = (16 * t11 [ngo] - t10 [ngo]) / 15
-                nogo2 = np.zeros (g3.shape, dtype = bool)
+                nogo2 = np.zeros (g1.shape, dtype = bool)
                 # test convergence of 5 point romberg result
-                tri = np.zeros (g3.shape, dtype = complex)
+                tri = np.zeros (g1.shape, dtype = complex)
                 tri [ngo] = self.test (t11 [ngo], t20 [ngo], 0.)
                 nogo2 [(tri.real > rx) | (tri.imag > rx)] = 1
                 ngo2 = np.sum (nogo2, axis = 1, dtype = bool)
-                go   = np.logical_not (ngo2)
+                go   = np.logical_not (ngo2) & ngo
                 sum [go] = sum [go] + t20 [go]
                 nt  [go] = nt  [go] + 1
 
-                if ngo2.any:
+                if self.verbose and ngo2.any ():
                     u, c = np.unique (ngo2, return_counts = True)
                     d = dict (zip (u, c))
                     print ('ngo2: %d' % d [True])
@@ -171,6 +179,7 @@ class Sommerfeld:
                 dzotn = dzot [..., np.newaxis]
                 g5 [ngo2] = g3 [ngo2]
                 g3 [ngo2] = g2 [ngo2]
+                # here we had a goto 4
             z = z + dz
             if (z > zend).all ():
                 break
@@ -178,7 +187,8 @@ class Sommerfeld:
             cnd = (nt >= 4) & (ns > nx)
             ns [cnd] = ns [cnd] / 2
             nt [cnd] = 1
-            # implicit continue here (goto 2)
+            # here we had a goto 2
+        return sum
     # end def rom1
 
     def saoa (self, t, cond = None):
@@ -189,10 +199,8 @@ class Sommerfeld:
         """
         if cond is None:
             cond = np.ones (self.is_hankel.shape, dtype = bool)
-        if self.is_hankel.shape != cond.shape:
-            import pdb; pdb.set_trace ()
         is_hankel = self.is_hankel & cond
-        is_bessel = np.logical_not (self.is_hankel) & cond
+        is_bessel = self.is_bessel & cond
         dxl = (self.b - self.a)
         xl  = self.a + dxl * t
         cgam1 = np.zeros (self.is_hankel.shape, dtype = complex)
@@ -226,7 +234,7 @@ class Sommerfeld:
         dgam [cnd] = cgam2 [cnd] - cgam1 [cnd]
         sign [cnd] = 0
         cnd = (sign != 0)
-        xxl = (1 / (xl * xl)) [cnd]
+        xxl = (1 / (xl [cnd] * xl [cnd]))
         dgam [cnd] = \
             ( sign [cnd]
             * ((self.ct3 * xxl + self.ct2) * xxl + self.ct1)
