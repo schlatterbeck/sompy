@@ -11,6 +11,7 @@ eps0 = 1e-12 / (c**2 * mu0)
 class Sommerfeld:
 
     verbose = False
+    debug   = False
 
     def __init__ (self, eps_r, sigma = None, fmhz = None):
         """ The original implementation used the case where sigma < 0 to
@@ -90,6 +91,65 @@ class Sommerfeld:
         crit = 1e-4
         maxh = 20
         dlt  = dela
+        ibx  = 0
+        if ibk == 0:
+            ibx = 1
+        ans2 = np.array (seed)
+        b = start
+        # Label here was 2:
+        i = 0
+        q1 = np.zeros ((nans, maxh))
+        q2 = np.zeros ((nans, maxh))
+        while inti < maxh:
+            inx = inti
+            a = b
+            b = b + dlt
+            if ibx == 0 and b.real >= bk.real:
+                # Hit break point. Reset seed and start over.
+                ibx  = 1
+                b    = bk
+                dlt  = delb
+                sum  = rom1 (nans, 2)
+                ans2 = ans2 + sum
+                # Restart the loop
+                inti = 0
+                continue
+            sum  = rom1 (nans, 2) # FIXME cond
+            ans1 = ans2 + sum
+            a = b
+            b = b + dlt
+            if ibx == 0 and b.real >= bk.real:
+                # Hit break point. Reset seed and start over.
+                ibx  = 2
+                b    = bk
+                dlt  = delb
+                sum  = rom1 (nans, 2)
+                ans2 = ans1 + sum
+                # Restart the loop
+                inti = 0
+                continue
+            sum  = rom1 (nans, 2) # FIXME cond
+            ans2 = ans1 + sum
+            # 11
+            den  = 0 # FIXME should be an array?
+            #for i in range (nans):
+            if inti < 1:
+                q1 [inti] = ans1
+                q2 [inti] = ans2
+                amg = np.abs (ans2.real) + np.abs (ans2.imag)
+                if amg > den:
+                    den = amg
+            for j in range (1, inti + 1):
+                pass
+
+            # goto 17
+            AS1 = ANS1
+            AS2 = ANS2
+            
+
+
+            # Loop
+            inti += 1
     # end def gshank
 
     def rom1 (self, n, nx, todo):
@@ -109,6 +169,8 @@ class Sommerfeld:
         g3    = np.zeros (sum.shape, dtype = complex)
         g4    = np.zeros (sum.shape, dtype = complex)
         g5    = np.zeros (sum.shape, dtype = complex)
+        if self.debug:
+            count = np.zeros (self.rho.shape, dtype = int)
         # This used to be label 2
         while True:
             dz = 1 / ns
@@ -124,6 +186,8 @@ class Sommerfeld:
             # This used to be label 4
             ngo2 = todo
             while ngo2.any ():
+                if self.debug:
+                    count [ngo2] = count [ngo2] + 1
                 nogo = np.zeros (g1.shape, dtype = bool)
                 t00  = np.zeros (g1.shape, dtype = complex)
                 t01  = np.zeros (g1.shape, dtype = complex)
@@ -183,11 +247,18 @@ class Sommerfeld:
             z = z + dz
             if (z > zend).all ():
                 break
-            g1 = g5
+            g1 [todo] = g5 [todo] # copy!
             cnd = (nt >= 4) & (ns > nx)
             ns [cnd] = ns [cnd] / 2
             nt [cnd] = 1
             # here we had a goto 2
+        if self.debug:
+            d = {}
+            for k in count:
+                if k not in d:
+                    d [k] = 0
+                d [k] += 1
+            import pdb; pdb.set_trace ()
         return sum
     # end def rom1
 

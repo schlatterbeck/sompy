@@ -86,7 +86,7 @@ class Test_Base:
         s.b = 53.2088928-53.2088928j
         cond = np.zeros (s.rho.shape, dtype = bool)
         cond [71] = 1
-        r = s.rom1 (6, 2, cond) # not using s.is_bessel, takes *looong*
+        r = s.rom1 (6, 2, s.is_bessel)
         cond [1] = 1
         r = r [cond]
         assert r.shape == vals.shape
@@ -110,7 +110,7 @@ class Test_Base:
         s.b = 3.76991153 -1.2566371j
         cond = np.zeros (s.rho.shape, dtype = bool)
         cond [1] = 1
-        r = s.rom1 (6, 2, cond) # Not using s.is_hankel here, takes long
+        r = s.rom1 (6, 2, s.is_hankel)
         cond [71] = 1
         r = r [cond]
         assert r.shape == vals.shape
