@@ -34,26 +34,31 @@ class Sommerfeld:
         # increments aka the dimension)
         # The X values are R (R = sqrt (rho ** 2 + (z + h) ** 2))
         # The Y values are THETA (THETA = atan ((z + h) / rho)
-        self.dxa = np.array ([.02, .05, .1])
-        self.dya = np.array ([np.pi / 18, np.pi / 36, np.pi / 18])
-        self.nxa = np.array ([11, 17, 9])
-        self.nya = np.array ([10,  5, 8])
-        self.xsa = np.array ([0., .2, .2])
-        self.ysa = np.array ([0., 0., np.pi / 9])
-        xx    = (self.xsa, self.xsa + (self.nxa - 1) * self.dxa, self.nxa)
-        yy    = (self.ysa, self.ysa + (self.nya - 1) * self.dya, self.nya)
+        dxa = np.array ([.02, .05, .1])
+        dya = np.array ([np.pi / 18, np.pi / 36, np.pi / 18])
+        nxa = np.array ([10, 17, 9]) #([11, 17, 9])
+        nya = np.array ([10,  5, 8])
+        xsa = np.array ([0.02, .2, .2])
+        ysa = np.array ([0., 0., np.pi / 9])
+        xx    = (xsa, xsa + (nxa - 1) * dxa, nxa)
+        yy    = (ysa, ysa + (nya - 1) * dya, nya)
         xgrid = [np.linspace (*x) for x in zip (*xx)]
         ygrid = [np.linspace (*y) for y in zip (*yy)]
         # avoid computing things twice:
         xgrid [0] = xgrid [0][:-1]
         ygrid [2] = ygrid [2][1:]
-        xygrid = [np.meshgrid (x, y) for x, y in zip (xgrid, ygrid)]
+        xygrid = [np.meshgrid (x, y, indexing = 'ij')
+                  for x, y in zip (xgrid, ygrid)]
         r     = np.concatenate ([x [0].flatten () for x in xygrid])
         theta = np.concatenate ([x [1].flatten () for x in xygrid])
+        #for a, b in zip (r, theta):
+        #    print ('r:', a, 'theta:', b)
         rho   = self.rho = r * np.cos (theta)
         zph   = self.zph = r * np.sin (theta)
         rho [rho < 1e-7] = 1e-8
         zph [zph < 1e-7] = 0.0
+        #for a, b in zip (rho, zph):
+        #    print ('rho:', a, 'zph:', b)
         self.is_hankel = self.zph < 2 * self.rho
         self.is_bessel = np.logical_not (self.is_hankel)
 

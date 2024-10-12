@@ -28,7 +28,7 @@ class Test_Base:
         s.a = 0j
         s.b = 53.2088928-53.2088928j
         cond = np.zeros (s.rho.shape, dtype = bool)
-        cond [71] = 1
+        cond [7] = 1
         result = []
         t = np.ones (s.rho.shape) * .25
         r = s.saoa (t, cond = cond)
@@ -62,7 +62,7 @@ class Test_Base:
         s.a = 2.51327419j
         s.b = 3.76991153 -1.2566371j
         cond = np.zeros (s.rho.shape, dtype = bool)
-        cond [1] = cond [11] = 1
+        cond [0] = cond [1] = 1
         t = np.zeros (s.rho.shape)
         r = s.saoa (t, cond = cond)
         assert r.shape == vals.shape
@@ -84,10 +84,9 @@ class Test_Base:
         s = Sommerfeld (4.0, .001, 10.0)
         s.a = 0j
         s.b = 53.2088928-53.2088928j
-        cond = np.zeros (s.rho.shape, dtype = bool)
-        cond [71] = 1
         r = s.rom1 (6, 2, s.is_bessel)
-        cond [1] = 1
+        cond = np.zeros (s.rho.shape, dtype = bool)
+        cond [0] = cond [7] = 1
         r = r [cond]
         assert r.shape == vals.shape
         assert r == pytest.approx (vals, rel = 1e-3)
@@ -108,10 +107,9 @@ class Test_Base:
         s = Sommerfeld (4.0, .001, 10.0)
         s.a = 2.51327419j
         s.b = 3.76991153 -1.2566371j
-        cond = np.zeros (s.rho.shape, dtype = bool)
-        cond [1] = 1
         r = s.rom1 (6, 2, s.is_hankel)
-        cond [71] = 1
+        cond = np.zeros (s.rho.shape, dtype = bool)
+        cond [0] = cond [7] = 1
         r = r [cond]
         assert r.shape == vals.shape
         assert r == pytest.approx (vals, rel = 1e-3)
