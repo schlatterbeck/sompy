@@ -85,11 +85,10 @@ class Sommerfeld:
         ans = self.evlua_bessel (dlt)
         ans [self.is_hankel] = self.evlua_hankel (dlt) [self.is_hankel]
         # Conjugate since NEC uses exp (+jwt)
-        import pdb; pdb.set_trace ()
-        erv = np.conjugate (self.ck1sq * ans [2])
-        ezv = np.conjugate (self.ck1sq * (ans [1] + ck2sq * ans [4]))
-        erh = np.conjugate (self.ck2sq * (ans [0] + ans [5]))
-        eph = -np.conjugate (self.ck2sq * (ans [3] + ans [6]))
+        erv = np.conjugate (self.ck1sq * ans.T [2])
+        ezv = np.conjugate (self.ck1sq * (ans.T [1] + self.ck2sq * ans.T [4]))
+        erh = np.conjugate (self.ck2sq * (ans.T [0] + ans.T [5]))
+        eph = -np.conjugate (self.ck2sq * (ans.T [3] + ans.T [5]))
         return erv, ezv, erh, eph
     # end def evlua
 
@@ -234,6 +233,9 @@ class Sommerfeld:
                 todo   [hitb2] = False
             sum  [todo] = self.rom1 (nans, 2, todo) [todo]
             ans2 [todo] = ans1 [todo] + sum [todo]
+            if not todo.any ():
+                converged = np.array (todo)
+                break
             # 11
             as1 = ans1 [cond]
             as2 = ans2 [cond]
@@ -286,12 +288,12 @@ class Sommerfeld:
                 val = np.zeros (sum.shape, dtype = complex)
                 val [todo] = .5 * (q1 [inx] + q2 [inx])
                 sum [converged] = val [converged]
-        if not converged.any ():
+        if todo.any () and not converged.any ():
             raise ValueError ('No convergence in gshank')
         # Recursive call where we hit the breakpoint
         if bk is not None and ibx.any ():
-            ibx = ibs & cond
-            self.sum [ibx] = self.gshank \
+            ibx = ibx & cond
+            sum [ibx] = self.gshank \
                 (bk [ibx], delb, nans, ans2 [ibx], ibx) [ibx]
         return sum
     # end def gshank

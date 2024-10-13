@@ -209,10 +209,79 @@ class Test_Base:
         assert r == pytest.approx (vals, rel = 1e-3)
     # end def test_gshank_hankel
 
+    def test_gshank_hankel_recursive (self):
+        seed = \
+            [ [ -13.0748482   +10.4512615j
+              ,  2.36912513   -0.433109283j
+              ,  1.41920185   +4.10852337j
+              ,  11.2865829   -10.357749j
+              , -0.0147127882 +0.00860253721j
+              ,  0.933717251  -0.0110758897j
+              ]
+            , [ -13.7067928   +9.71621895j
+              ,  2.41830635   -0.102204993j
+              ,  0.954755962  +4.22943687j
+              ,  11.8771076   -9.93634701j
+              , -0.0149100628 +0.00816507265j
+              ,  0.934709907  +0.12284977j
+              ]
+            ]
+        seed = np.array (seed)
+        vals = \
+            [ [ 0.103320166     -0.988833129j
+              ,  5.96449757     +0.454928935j
+              ,  6.3460722      -0.759163558j
+              , -6.10379219     -0.0741284937j
+              ,  0.000911501935 +0.0154020973j
+              ,  2.37479591     +0.548333287j
+              ]
+            , [ -0.784671187    -0.825073123j
+              ,  5.94271421     +0.419626474j
+              ,  5.33457327     -0.620028794j
+              , -5.16232586     -0.182956994j
+              ,  0.000108209628 +0.0149045251j
+              ,  2.36532521     +0.532098413j
+              ]
+            ]
+        vals = np.array (vals)
+        s = Sommerfeld (4.0, .001, 10.0)
+        st = np.zeros (s.rho.shape, dtype = complex)
+        st [0] = 6.40884924 -1.2566371j
+        st [1] = 6.40884924 -1.2566371j
+        d  = np.array ([26.8740673   +16.2709866j, 27.2886486  +16.5219936j])
+        d2 = np.array ([0.0314159133 +31.4159126j,  5.53947687 +31.4159298j])
+        bk = np.zeros (s.rho.shape, dtype = complex)
+        bk [0] = 12.9941263 +2.73043895j
+        bk [1] = 12.9941263 +2.73043895j
+        cond = np.zeros (s.rho.shape, dtype = bool)
+        cond [0] = cond [1] = 1
+        r = s.gshank (st, d, 6, seed, cond, bk, d2) [cond]
+        assert r.shape == vals.shape
+        assert r == pytest.approx (vals, rel = 1e-3)
+    # end def test_gshank_hankel_recursive
+
     def test_evlua (self):
+        vals = \
+            [ [  1056.00671 -330.47583j
+              ,  872.122375 -593.691833j
+              ,  1150.5542  -498.038666j
+              , -905.507202 +534.14978j
+              ]
+            , [  886.40332  -280.664612j
+              ,  867.573914 -581.21875j
+              ,  1112.45508 -495.226624j
+              , -939.632324 +520.576355j
+              ]
+            ]
+        vals = np.array (vals)
         s = Sommerfeld (4.0, .001, 10.0)
         erv, ezv, erh, eph = s.evlua ()
-        import pdb; pdb.set_trace ()
+        result = []
+        result.append ([erv [0], ezv [0], erh [0], eph [0]])
+        result.append ([erv [1], ezv [1], erh [1], eph [1]])
+        result = np.array (result)
+        assert result.shape == vals.shape
+        assert result == pytest.approx (vals, rel = 1e-3)
     # end def test_evlua
 
 # end class Test_Base
