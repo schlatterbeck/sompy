@@ -96,52 +96,66 @@ class Sommerfeld:
         """
         crit = 1e-4
         maxh = 20
-        dlt  = dela
+        if dela.shape [0] == seed.shape [0]:
+            dlt = dela
+        else:
+            dlt = dela [cond]
         ibx  = 0
         if ibk == 0:
             ibx = 1
-        ans2 = np.array (seed)
-        self.b = start
+        ans1 = np.zeros (cond.shape + (nans,), dtype = complex)
+        ans2 = np.zeros (cond.shape + (nans,), dtype = complex)
+        ans2 [cond] = seed
+        if cond.shape == start.shape:
+            self.b = np.array (start)
+        else:
+            self.b = np.zeros (cond.shape, dtype = complex)
+            self.b [cond] = start
         # Label here was 2:
         i = 0
         q1 = np.zeros ((maxh,) + seed.shape, dtype = complex)
         q2 = np.zeros ((maxh,) + seed.shape, dtype = complex)
         # label 2
-        converged = True
-        inti      = 0
+        todo = np.array (cond, dtype = bool)
+        done = np.logical_not (todo)
+        sum  = np.zeros (cond.shape + (nans,), dtype = complex)
+        inti = 0
         while inti < maxh:
             inx = inti
-            self.a = self.b
-            self.b = self.b + dlt
+            self.a = np.array (self.b)
+            self.b [cond] = self.b [cond] + dlt
             if ibx == 0 and self.b.real >= bk.real:
                 # Hit break point. Reset seed and start over.
-                ibx    = 1
-                self.b = bk
-                dlt    = delb
-                sum    = self.rom1 (nans, 2, cond) [cond]
-                ans2   = ans2 + sum
+                self.b [cond] = bk
+                ibx  = 1
+                if delb.shape [0] == seed.shape [0]:
+                    dlt = delb
+                else:
+                    dlt = delb [cond]
+                sum  [todo] = self.rom1 (nans, 2, todo) [todo]
+                ans2 [todo] = ans2 [todo] + sum [todo]
                 # Restart the loop
-                inti   = 0
+                inti = 0
                 continue
-            sum  = self.rom1 (nans, 2, cond) [cond]
-            ans1 = ans2 + sum
-            self.a = self.b
-            self.b = self.b + dlt
+            sum  [todo] = self.rom1 (nans, 2, todo) [todo]
+            ans1 [todo] = ans2 [todo] + sum [todo]
+            self.a = np.array (self.b)
+            self.b [cond] = self.b [cond] + dlt
             if ibx == 0 and self.b.real >= bk.real:
                 # Hit break point. Reset seed and start over.
-                ibx    = 2
-                self.b = bk
-                dlt    = delb
-                sum    = self.rom1 (nans, 2, cond) [cond]
-                ans2   = ans1 + sum
+                self.b [cond] = bk
+                ibx  = 2
+                dlt  = delb
+                sum  [todo] = self.rom1 (nans, 2, todo) [todo]
+                ans2 [todo] = ans1 [todo] + sum [todo]
                 # Restart the loop
-                inti   = 0
+                inti = 0
                 continue
-            sum  = self.rom1 (nans, 2, cond) [cond]
-            ans2 = ans1 + sum
+            sum  [todo] = self.rom1 (nans, 2, todo) [todo]
+            ans2 [todo] = ans1 [todo] + sum [todo]
             # 11
-            as1 = ans1
-            as2 = ans2
+            as1 = ans1 [cond]
+            as2 = ans2 [cond]
             for j in range (1, inti + 1):
                 jm = j - 1
                 aa = q2 [jm]
@@ -172,24 +186,26 @@ class Sommerfeld:
             as2  = ans2
             denm = 1e-3 * den * crit
             jm   = max (inti - 3, 1)
-            converged = True
+            converged = np.array (todo)
             for j in range (jm - 1, inti + 1):
                 a1  = q2 [j]
                 den = (abs (a1.real) + abs (a1.imag)) * crit
-                den [den < denm] = denm
+                dm  = np.reshape (np.repeat (denm [todo], 6), den.shape)
+                den [den < dm] = dm [den < dm]
                 a1  = q1 [j] - a1
                 amg = abs (a1.real) + abs (a1.imag)
-                if (amg > den).any ():
-                    converged = False
+                nconv = np.zeros (todo.shape, dtype = bool)
+                nconv [todo] = np.sum (amg > den, axis = 1, dtype = bool)
+                converged [nconv] = False
+                if not converged.any ():
                     break
-            if converged:
-                sum = .5 * (q1 [inx] + q2 [inx])
-                break
+            if converged.any ():
+                val = np.zeros (sum.shape, dtype = complex)
+                val [todo] = .5 * (q1 [inx] + q2 [inx])
+                sum [converged] = val [converged]
             # Loop
             inti += 1
-        if not converged:
-            print ('q1:', q1 [inx], file = sys.stderr)
-            print ('q2:', q2 [inx], file = sys.stderr)
+        if not converged.any ():
             raise ValueError ('No convergence in gshank')
         return sum
     # end def gshank
@@ -336,12 +352,14 @@ class Sommerfeld:
         cgam2 = cgam2 [cond]
         b0    = b0    [cond]
         b0p   = b0p   [cond]
-        xl    = xl [cond]
-        xlr  = xl * np.conjugate (xl)
-        dgam = np.zeros (xlr.shape, dtype = complex)
-        dgam [xlr < self.tsmag] = cgam2 - cgam1
+        xl    = xl  [cond]
+        dxl   = dxl [cond]
+        xlr   = xl * np.conjugate (xl)
+        dgam  = np.zeros (xlr.shape, dtype = complex)
+        cnd   = (xlr < self.tsmag)
+        dgam [cnd] = cgam2 [cnd] - cgam1 [cnd]
         sign = np.ones (xlr.shape, dtype = bool)
-        sign [xlr < self.tsmag] = 0
+        sign [cnd] = 0
         sign [(xl.imag >= 0) & (xl.real < 2 * np.pi)] = -1
         cnd = (sign == 1) & (xl.real <= self.ck1.real)
         dgam [cnd] = cgam2 [cnd] - cgam1 [cnd]

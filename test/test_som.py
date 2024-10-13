@@ -25,8 +25,8 @@ class Test_Base:
             ]
         vals = np.array (vals)
         s = Sommerfeld (4.0, .001, 10.0)
-        s.a = 0j
-        s.b = 53.2088928-53.2088928j
+        s.a = np.zeros (s.rho.shape, dtype = complex)
+        s.b = np.ones  (s.rho.shape, dtype = complex) * (53.2088928-53.2088928j)
         cond = np.zeros (s.rho.shape, dtype = bool)
         cond [7] = 1
         result = []
@@ -59,8 +59,8 @@ class Test_Base:
             ]
         vals = np.array (vals)
         s = Sommerfeld (4.0, .001, 10.0)
-        s.a = 2.51327419j
-        s.b = 3.76991153 -1.2566371j
+        s.a = np.ones (s.rho.shape, dtype = complex) * 2.51327419j
+        s.b = np.ones (s.rho.shape, dtype = complex) * (3.76991153 -1.2566371j)
         cond = np.zeros (s.rho.shape, dtype = bool)
         cond [0] = cond [1] = 1
         t = np.zeros (s.rho.shape)
@@ -82,8 +82,8 @@ class Test_Base:
             ]
         vals = np.array (vals)
         s = Sommerfeld (4.0, .001, 10.0)
-        s.a = 0j
-        s.b = 53.2088928-53.2088928j
+        s.a = np.zeros (s.rho.shape, dtype = complex)
+        s.b = np.ones  (s.rho.shape, dtype = complex) * (53.2088928-53.2088928j)
         r = s.rom1 (6, 2, s.is_bessel)
         cond = np.zeros (s.rho.shape, dtype = bool)
         cond [0] = cond [7] = 1
@@ -105,8 +105,8 @@ class Test_Base:
             ]
         vals = np.array (vals)
         s = Sommerfeld (4.0, .001, 10.0)
-        s.a = 2.51327419j
-        s.b = 3.76991153 -1.2566371j
+        s.a = np.ones (s.rho.shape, dtype = complex) * 2.51327419j
+        s.b = np.ones (s.rho.shape, dtype = complex) * (3.76991153 -1.2566371j)
         r = s.rom1 (6, 2, s.is_hankel)
         cond = np.zeros (s.rho.shape, dtype = bool)
         cond [0] = cond [7] = 1
@@ -124,6 +124,13 @@ class Test_Base:
               , -0.00221469323 +0.012674178j
               ,  1.96858811    -0.311186165j
               ]
+            , [ -2.18897271    +0.478487819j
+              ,  4.46816778    -1.46256638j
+              ,  0.149093568   -0.235078514j
+              , -2.18731856    +0.48920086j
+              , -0.00232726359 +0.0125354007j
+              ,  1.86808836    -0.306106269j
+              ]
             ]
         seed = np.array (seed)
         vals = \
@@ -134,14 +141,23 @@ class Test_Base:
               , -0.002336937 +0.0128434291j
               ,  2.34222507  +0.4738428j
               ]
+            , [ -2.87119198    -0.397920609j
+              ,  5.88670492    +0.286414981j
+              ,  0.559056878   -0.0576702692j
+              , -2.91910267    -0.391062587j
+              , -0.00244203862 +0.0127298869j
+              ,  2.34124136    +0.470980108j
+              ]
             ]
         vals = np.array (vals)
         s = Sommerfeld (4.0, .001, 10.0)
-        b = 53.2088928 -53.2088928j
-        d = 33.4321327 +0j
+        b = np.zeros (s.rho.shape, dtype = complex)
+        b [7] = 53.2088928 -53.2088928j
+        b [8] = 50.7713356 -50.7713356j
+        d = np.array ([33.4321327 +0j, 31.9005718 +0j])
         cond = np.zeros (s.rho.shape, dtype = bool)
-        cond [7] = 1
-        r = s.gshank (b, d, 6, seed, 0, b, b, cond)
+        cond [7] = cond [8] = 1
+        r = s.gshank (b, d, 6, seed, 0, b, b, cond) [cond]
         assert r.shape == vals.shape
         assert r == pytest.approx (vals, rel = 1e-3)
     # end def test_gshank_bessel
