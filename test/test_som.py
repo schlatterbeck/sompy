@@ -115,4 +115,35 @@ class Test_Base:
         assert r == pytest.approx (vals, rel = 1e-3)
     # end def test_rom1_hankel
 
+    def test_gshank_bessel (self):
+        seed = \
+            [ [ -2.31588697    +0.480371684j
+              ,  4.71199608    -1.50895941j
+              ,  0.324989647   -0.507604897j
+              , -2.30867672    +0.528231323j
+              , -0.00221469323 +0.012674178j
+              ,  1.96858811    -0.311186165j
+              ]
+            ]
+        seed = np.array (seed)
+        vals = \
+            [ [ -2.80080628  -0.413829148j
+              ,  5.88886356  +0.292651534j
+              ,  1.12654698  -0.116916478j
+              , -2.99543357  -0.385962725j
+              , -0.002336937 +0.0128434291j
+              ,  2.34222507  +0.4738428j
+              ]
+            ]
+        vals = np.array (vals)
+        s = Sommerfeld (4.0, .001, 10.0)
+        b = 53.2088928 -53.2088928j
+        d = 33.4321327 +0j
+        cond = np.zeros (s.rho.shape, dtype = bool)
+        cond [7] = 1
+        r = s.gshank (b, d, 6, seed, 0, b, b, cond)
+        assert r.shape == vals.shape
+        assert r == pytest.approx (vals, rel = 1e-3)
+    # end def test_gshank_bessel
+
 # end class Test_Base

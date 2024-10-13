@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 
+import sys
 import numpy as np
 from scipy.special import jv as bessel, hankel1 as hankel
 
@@ -86,7 +87,7 @@ class Sommerfeld:
         cp3 = 2.04 * np.pi -.4j * np.pi
     # end def evlua
 
-    def gshank (start, dela, sum, nans, seed, ibk, bk, delb):
+    def gshank (self, start, dela, nans, seed, ibk, bk, delb, cond):
         """ Integrates the 6 Sommerfeld integrals from start to infinity
             (until convergence) in lambda. At the break point, bk, the
             step increment may be changed from dela to delb. Shank's
@@ -100,61 +101,97 @@ class Sommerfeld:
         if ibk == 0:
             ibx = 1
         ans2 = np.array (seed)
-        b = start
+        self.b = start
         # Label here was 2:
         i = 0
-        q1 = np.zeros ((nans, maxh))
-        q2 = np.zeros ((nans, maxh))
+        q1 = np.zeros ((maxh,) + seed.shape, dtype = complex)
+        q2 = np.zeros ((maxh,) + seed.shape, dtype = complex)
+        # label 2
+        converged = True
+        inti      = 0
         while inti < maxh:
             inx = inti
-            a = b
-            b = b + dlt
-            if ibx == 0 and b.real >= bk.real:
+            self.a = self.b
+            self.b = self.b + dlt
+            if ibx == 0 and self.b.real >= bk.real:
                 # Hit break point. Reset seed and start over.
-                ibx  = 1
-                b    = bk
-                dlt  = delb
-                sum  = rom1 (nans, 2)
-                ans2 = ans2 + sum
+                ibx    = 1
+                self.b = bk
+                dlt    = delb
+                sum    = self.rom1 (nans, 2, cond) [cond]
+                ans2   = ans2 + sum
                 # Restart the loop
-                inti = 0
+                inti   = 0
                 continue
-            sum  = rom1 (nans, 2) # FIXME cond
+            sum  = self.rom1 (nans, 2, cond) [cond]
             ans1 = ans2 + sum
-            a = b
-            b = b + dlt
-            if ibx == 0 and b.real >= bk.real:
+            self.a = self.b
+            self.b = self.b + dlt
+            if ibx == 0 and self.b.real >= bk.real:
                 # Hit break point. Reset seed and start over.
-                ibx  = 2
-                b    = bk
-                dlt  = delb
-                sum  = rom1 (nans, 2)
-                ans2 = ans1 + sum
+                ibx    = 2
+                self.b = bk
+                dlt    = delb
+                sum    = self.rom1 (nans, 2, cond) [cond]
+                ans2   = ans1 + sum
                 # Restart the loop
-                inti = 0
+                inti   = 0
                 continue
-            sum  = rom1 (nans, 2) # FIXME cond
+            sum  = self.rom1 (nans, 2, cond) [cond]
             ans2 = ans1 + sum
             # 11
-            den  = 0 # FIXME should be an array?
-            #for i in range (nans):
-            if inti < 1:
-                q1 [inti] = ans1
-                q2 [inti] = ans2
-                amg = np.abs (ans2.real) + np.abs (ans2.imag)
-                if amg > den:
-                    den = amg
+            as1 = ans1
+            as2 = ans2
             for j in range (1, inti + 1):
-                pass
+                jm = j - 1
+                aa = q2 [jm]
+                a1 = q1 [jm] + as1 - 2 * aa
+                cn = (a1 == 0j)
+                a1 [cn] = q1 [jm][cn]
+                cn = np.logical_not (cn)
+                a2 = np.zeros (aa.shape, dtype = complex)
+                a2 [cn] = aa [cn] - q1 [jm][cn]
+                a1 [cn] = q1 [jm][cn] - a2 [cn] * a2 [cn] / a1 [cn]
+                a2 = aa + as2 - 2 * as1
+                cn = (a2 == 0j)
+                a2 [cn] = aa [cn]
+                cn = np.logical_not (cn)
+                a2 [cn] = aa [cn] - (as1 [cn] - aa [cn]) ** 2 / a2 [cn]
+                q1 [jm] = as1
+                q2 [jm] = as2
+                as1 = a1
+                as2 = a2
+            # This happens before the loop above for inti == 0
+            q1 [inti] = as1
+            q2 [inti] = as2
+            amg = np.abs (ans2.real) + np.abs (ans2.imag)
+            den = np.max (amg, axis = 1)
 
             # goto 17
-            AS1 = ANS1
-            AS2 = ANS2
-            
-
-
+            as1  = ans1
+            as2  = ans2
+            denm = 1e-3 * den * crit
+            jm   = max (inti - 3, 1)
+            converged = True
+            for j in range (jm - 1, inti + 1):
+                a1  = q2 [j]
+                den = (abs (a1.real) + abs (a1.imag)) * crit
+                den [den < denm] = denm
+                a1  = q1 [j] - a1
+                amg = abs (a1.real) + abs (a1.imag)
+                if (amg > den).any ():
+                    converged = False
+                    break
+            if converged:
+                sum = .5 * (q1 [inx] + q2 [inx])
+                break
             # Loop
             inti += 1
+        if not converged:
+            print ('q1:', q1 [inx], file = sys.stderr)
+            print ('q2:', q2 [inx], file = sys.stderr)
+            raise ValueError ('No convergence in gshank')
+        return sum
     # end def gshank
 
     def rom1 (self, n, nx, todo):
