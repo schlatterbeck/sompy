@@ -35,12 +35,12 @@ class Sommerfeld:
         # increments aka the dimension)
         # The X values are R (R = sqrt (rho ** 2 + (z + h) ** 2))
         # The Y values are THETA (THETA = atan ((z + h) / rho)
-        dxa = np.array ([.02, .05, .1])
-        dya = np.array ([np.pi / 18, np.pi / 36, np.pi / 18])
-        nxa = np.array ([10, 17, 9]) #([11, 17, 9])
-        nya = np.array ([10,  5, 8])
-        xsa = np.array ([0.02, .2, .2])
-        ysa = np.array ([0., 0., np.pi / 9])
+        dxa = self.dxa = np.array ([.02, .05, .1])
+        dya = self.dya = np.array ([np.pi / 18, np.pi / 36, np.pi / 18])
+        nxa = self.nxa = np.array ([10, 17, 9]) #([11, 17, 9])
+        nya = self.nya = np.array ([10,  5, 8])
+        xsa = self.xsa = np.array ([0.02, .2, .2])
+        ysa = self.ysa = np.array ([0., 0., np.pi / 9])
         xx    = (xsa, xsa + (nxa - 1) * dxa, nxa)
         yy    = (ysa, ysa + (nya - 1) * dya, nya)
         xgrid = [np.linspace (*x) for x in zip (*xx)]
@@ -50,8 +50,8 @@ class Sommerfeld:
         ygrid [2] = ygrid [2][1:]
         xygrid = [np.meshgrid (x, y, indexing = 'ij')
                   for x, y in zip (xgrid, ygrid)]
-        r     = np.concatenate ([x [0].flatten () for x in xygrid])
-        theta = np.concatenate ([x [1].flatten () for x in xygrid])
+        r     = self.r     = np.concatenate ([x [0].flatten () for x in xygrid])
+        theta = self.theta = np.concatenate ([x [1].flatten () for x in xygrid])
         #for a, b in zip (r, theta):
         #    print ('r:', a, 'theta:', b)
         rho   = self.rho = r * np.cos (theta)
@@ -76,6 +76,75 @@ class Sommerfeld:
         # We also do not define JH which is 1 for the hankel form an 0
         # for bessel, we use is_hankel above
     # end def __init__
+
+    def compute (self):
+        erv, ezv, erh, eph = self.evlua ()
+        rk  = 2 * np.pi * self.r
+        con = - (0 +4.77147j) * self.r / (np.cos (rk) -1j * np.sin (rk))
+        erv = erv * con
+        ezv = ezv * con
+        erh = erh * con
+        eph = eph * con
+        self.ar1 = []
+        self.ar2 = []
+        self.ar3 = []
+        self.ar1.append (np.reshape (erv [:90],        ( 9, 10)))
+        self.ar2.append (np.reshape (erv [90:90+5*17], (17,  5)))
+        self.ar3.append (np.reshape (erv [90+5*17:],   ( 9,  7)))
+        self.ar1.append (np.reshape (ezv [:90],        ( 9, 10)))
+        self.ar2.append (np.reshape (ezv [90:90+5*17], (17,  5)))
+        self.ar3.append (np.reshape (ezv [90+5*17:],   ( 9,  7)))
+        self.ar1.append (np.reshape (erh [:90],        ( 9, 10)))
+        self.ar2.append (np.reshape (erh [90:90+5*17], (17,  5)))
+        self.ar3.append (np.reshape (erh [90+5*17:],   ( 9,  7)))
+        self.ar1.append (np.reshape (eph [:90],        ( 9, 10)))
+        self.ar2.append (np.reshape (eph [90:90+5*17], (17,  5)))
+        self.ar3.append (np.reshape (eph [90+5*17:],   ( 9,  7)))
+
+        # rows not computed for grid1
+        a10 = list (self.ar3 [0][0]) + list (self.ar2 [0][0][[0,2,4]])
+        a11 = list (self.ar3 [1][0]) + list (self.ar2 [1][0][[0,2,4]])
+        a12 = list (self.ar3 [2][0]) + list (self.ar2 [2][0][[0,2,4]])
+        a13 = list (self.ar3 [3][0]) + list (self.ar2 [3][0][[0,2,4]])
+
+        # cols not computed for grid2
+        a30 = list (self.ar2 [0][[0,2,4,6,8,10,12,14,16]].T [4])
+        a31 = list (self.ar2 [1][[0,2,4,6,8,10,12,14,16]].T [4])
+        a32 = list (self.ar2 [2][[0,2,4,6,8,10,12,14,16]].T [4])
+        a33 = list (self.ar2 [3][[0,2,4,6,8,10,12,14,16]].T [4])
+
+        # Fill grid1 for r equal to zero
+        cl2  = -(0 +188.370j) * (self.epscf - 1) / (self.epscf + 1)
+        cl1  = cl2 / (self.epscf + 1)
+        ysa, nya, dya = self.ysa [0], self.nya [0], self.dya [0]
+        thet = np.linspace (ysa, ysa + (nya - 1) * dya, nya)
+        ezv  = np.ones  (thet.shape, dtype = complex) * self.epscf * cl1
+        erv  = np.zeros (thet.shape, dtype = complex)
+        erh  = np.zeros (thet.shape, dtype = complex)
+        eph  = np.zeros (thet.shape, dtype = complex)
+        cnd  = np.ones  (thet.shape, dtype = bool)
+        cnd [-1] = 0
+        tfac2 = np.cos (thet [cnd])
+        tfac1 = (1 - np.sin (thet [cnd])) / tfac2
+        tfac2 = tfac1 / tfac2
+        erv [cnd] = self.epscf * cl1 * tfac1
+        erh [cnd] = cl1 * (tfac2 - 1) + cl2
+        eph [cnd] = cl1 * tfac2 - cl2
+        erv [-1] = 0j
+        erh [-1] = cl2 - .5 * cl1
+        eph [-1] = -erh [-1]
+        # Insert missing rows into ar1
+        self.ar1 [0] = np.vstack ((erv, self.ar1 [0], a10))
+        self.ar1 [1] = np.vstack ((ezv, self.ar1 [1], a11))
+        self.ar1 [2] = np.vstack ((erh, self.ar1 [2], a12))
+        self.ar1 [3] = np.vstack ((eph, self.ar1 [3], a13))
+        # Insert missing col into ar2
+        self.ar3 [0] = np.vstack ((self.ar3 [0].T, a30)).T
+        self.ar3 [1] = np.vstack ((self.ar3 [1].T, a31)).T
+        self.ar3 [2] = np.vstack ((self.ar3 [2].T, a32)).T
+        self.ar3 [3] = np.vstack ((self.ar3 [3].T, a33)).T
+
+    # end def compute
 
     def evlua (self):
         """ Controls the integration contour in the complex lambda plane for
@@ -527,3 +596,4 @@ class Sommerfeld:
 
 if __name__ == '__main__':
     s = Sommerfeld (4.0, .001, 10.0)
+    s.compute ()
