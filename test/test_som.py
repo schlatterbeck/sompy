@@ -157,7 +157,7 @@ class Test_Base:
         d = np.array ([33.4321327 +0j, 31.9005718 +0j])
         cond = np.zeros (s.rho.shape, dtype = bool)
         cond [7] = cond [8] = 1
-        r = s.gshank (b, d, 6, seed, 0, b, b, cond) [cond]
+        r = s.gshank (b, d, 6, seed, cond) [cond]
         assert r.shape == vals.shape
         assert r == pytest.approx (vals, rel = 1e-3)
     # end def test_gshank_bessel
@@ -201,15 +201,18 @@ class Test_Base:
         st = np.zeros (s.rho.shape, dtype = complex)
         st [0] = 2.51327419j
         st [1] = 2.51327419j
-        b  = np.zeros (s.rho.shape, dtype = complex)
-        b [0] = -9.41958913e+33 +4.59163468e-41j
-        b [1] = 12.9941263 +2.73043895
         d = np.array ([-0.0314159133 +31.4159126j, -5.53947687 +31.4159298j])
         cond = np.zeros (s.rho.shape, dtype = bool)
         cond [0] = cond [1] = 1
-        r = s.gshank (st, d, 6, seed, 0, b, b, cond) [cond]
+        r = s.gshank (st, d, 6, seed, cond) [cond]
         assert r.shape == vals.shape
         assert r == pytest.approx (vals, rel = 1e-3)
     # end def test_gshank_hankel
+
+    def test_evlua (self):
+        s = Sommerfeld (4.0, .001, 10.0)
+        erv, ezv, erh, eph = s.evlua ()
+        import pdb; pdb.set_trace ()
+    # end def test_evlua
 
 # end class Test_Base

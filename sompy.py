@@ -77,40 +77,126 @@ class Sommerfeld:
         # for bessel, we use is_hankel above
     # end def __init__
 
-    def evlua (erv, ezv, erh, eph):
+    def evlua (self):
         """ Controls the integration contour in the complex lambda plane for
             evaluation of the Sommerfeld integrals
         """
-        dlt = np.max (self.zph, self.rho)
-        cp1 = 0            +.8j * np.pi
-        cp2 =  1.2 * np.pi -.4j * np.pi
-        cp3 = 2.04 * np.pi -.4j * np.pi
+        dlt = np.maximum (self.zph, self.rho)
+        ans = self.evlua_bessel (dlt)
+        ans [self.is_hankel] = self.evlua_hankel (dlt) [self.is_hankel]
+        # Conjugate since NEC uses exp (+jwt)
+        import pdb; pdb.set_trace ()
+        erv = np.conjugate (self.ck1sq * ans [2])
+        ezv = np.conjugate (self.ck1sq * (ans [1] + ck2sq * ans [4]))
+        erh = np.conjugate (self.ck2sq * (ans [0] + ans [5]))
+        eph = -np.conjugate (self.ck2sq * (ans [3] + ans [6]))
+        return erv, ezv, erh, eph
     # end def evlua
 
-    def gshank (self, start, dela, nans, seed, ibk, bk, delb, cond):
+    def evlua_bessel (self, dlt):
+        self.sum = np.zeros (self.rho.shape, dtype = complex)
+        self.a   = np.zeros (self.rho.shape, dtype = complex)
+        dlt = 1 / dlt
+        tkm = (1-1j) * .1 * self.tkmag
+        self.b = np.ones (self.rho.shape, dtype = complex) * tkm
+        cnd  = (dlt <  self.tkmag) & self.is_bessel
+        cnd2 = (dlt >= self.tkmag) & self.is_bessel
+        sum = self.rom1 (6, 2, cnd)
+        tmp = self.b
+        dd  = (1-1j) * dlt
+        self.b = np.ones (self.rho.shape, dtype = complex) * dd
+        sum [cnd2] = self.rom1 (6, 2, cnd2) [cnd2]
+        self.a = tmp
+        sum [cnd] = sum [cnd] + self.rom1 (6, 2, cnd) [cnd]
+        return self.gshank (self.b, np.pi / 5 * dlt, 6, sum, self.is_bessel)
+    # end def evlua_bessel
+
+    def evlua_hankel (self, dlt):
+        ones = np.ones (self.rho.shape, dtype = complex)
+        cp1 = ones * (0            +.8j * np.pi)
+        cp2 = ones * ( 1.2 * np.pi -.4j * np.pi)
+        cp3 = ones * (2.04 * np.pi -.4j * np.pi)
+        self.a = cp1
+        self.b = cp2
+        sum = self.rom1 (6, 2, self.is_hankel)
+        self.a = self.b
+        self.b = cp3
+        sum = -sum + self.rom1 (6, 2, self.is_hankel)
+        slope = self.rho / self.zph
+        slope [self.zph <= .001 * self.rho] = 1000
+        dlt = np.pi / 5 / dlt
+        delta  = -1 + 1j * slope * dlt / np.sqrt (1 + slope * slope)
+        delta2 = -np.conjugate (delta)
+        # Hmpf looks like bk is undef here????? FIXME
+        # Looks like bk really contains bogus value
+        # (-9.41958913e+33,4.59163468e-41)
+        bk   = np.zeros (self.rho.shape, dtype = complex)
+        ans  = self.gshank (cp1, delta, 6, sum, self.is_hankel)
+        rmis = self.rho * (self.ck1.real - 2 * np.pi)
+        # This used to be the conditions for goto 8
+        cnd8 = (rmis > 4 * self.rho / self.zph) | (self.rho < 1e-10)
+        # This used to be the condition for goto 6
+        cnd6 = (self.zph < 1e-10) & np.logical_not (cnd8)
+        not68 = np.logical_not (cnd8 | cnd6)
+        bk [not68] = ((-self.zph + 1j * self.rho) * (self.ck1 - cp3)) [not68]
+        rmis [not68] = -bk [not68].real / np.abs (bk [not68].imag)
+        # Another goto 8
+        cnd8 = cnd8 | (not68 & (rmis > 4 * self.rho / self.zph))
+        cnd8 = cnd8 & self.is_hankel
+        # Finally all that wasn't 8 is 6
+        # Integrate up between branch cuts, then to + infinity
+        cnd6 = np.logical_not (cnd8) & self.is_hankel
+        cp1 [cnd6] = self.ck1 - (.1 + .2j)
+        cp2 [cnd6] = cp1 [cnd6] + .2
+        bk  [cnd6] = 0 + 1j * dlt [cnd6]
+        sum [cnd6] = self.gshank (cp1, bk, 6, ans, cnd6) [cnd6]
+        self.a = cp1
+        self.b = cp2
+        ans [cnd6] = self.rom1 (6, 1, cnd6) [cnd6]
+        ans [cnd6] = ans [cnd6] - sum [cnd6]
+        sum [cnd6] = self.gshank (cp3, bk, 6, ans, cnd6) [cnd6]
+        ans [cnd6] = self.gshank (cp2, delta2, 6, sum, cnd6) [cnd6]
+        # cnd8
+        # Integrate below branch points, the to + infinity
+        sum  [cnd8] = -ans [cnd8]
+        rmis [cnd8] = self.ck1.real * 1.01
+        rmis [cnd8 & (2 * np.pi + 1 > rmis)] = 2 * np.pi + 1
+        bk   [cnd8] = rmis [cnd8] + .99j * self.ck1.imag
+        delta [cnd8] = bk [cnd8] - cp3 [cnd8]
+        delta [cnd8] = delta [cnd8] * dlt [cnd8] / np.abs (delta [cnd8])
+        ans [cnd8] = self.gshank (cp3, delta, 6, sum, cnd8, bk, delta2) [cnd8]
+        return ans
+    # end def evlua_hankel
+
+    def gshank (self, start, dela, nans, seed, cond, bk = None, delb = None):
         """ Integrates the 6 Sommerfeld integrals from start to infinity
             (until convergence) in lambda. At the break point, bk, the
             step increment may be changed from dela to delb. Shank's
             algorithm to accelerate convergence of a slowly converging
             series is used.
+            Note that no breakpoint checking is performed if bk is None.
+            If delb is None and a breakpoint is encountered, dela is
+            used.
         """
         crit = 1e-4
         maxh = 20
+        shape = cond.shape + (nans,)
+        if seed.shape == shape:
+            seed = seed [cond]
         if dela.shape [0] == seed.shape [0]:
             dlt = dela
         else:
             dlt = dela [cond]
-        ibx  = 0
-        if ibk == 0:
-            ibx = 1
-        ans1 = np.zeros (cond.shape + (nans,), dtype = complex)
-        ans2 = np.zeros (cond.shape + (nans,), dtype = complex)
+        ans1 = np.zeros (shape, dtype = complex)
+        ans2 = np.zeros (shape, dtype = complex)
         ans2 [cond] = seed
         if cond.shape == start.shape:
             self.b = np.array (start)
         else:
             self.b = np.zeros (cond.shape, dtype = complex)
             self.b [cond] = start
+        if delb is None:
+            delb = dela
         # Label here was 2:
         i = 0
         q1 = np.zeros ((maxh,) + seed.shape, dtype = complex)
@@ -119,38 +205,33 @@ class Sommerfeld:
         todo = np.array (cond, dtype = bool)
         done = np.logical_not (todo)
         sum  = np.zeros (cond.shape + (nans,), dtype = complex)
-        inti = 0
-        while inti < maxh:
+        if bk is None:
+            ibx = np.ones (cond.shape, dtype = bool)
+        else:
+            ibx = np.logical_not (cond)
+
+        for inti in range (maxh):
             inx = inti
             self.a = np.array (self.b)
             self.b [cond] = self.b [cond] + dlt
-            if ibx == 0 and self.b.real >= bk.real:
-                # Hit break point. Reset seed and start over.
-                self.b [cond] = bk
-                ibx  = 1
-                if delb.shape [0] == seed.shape [0]:
-                    dlt = delb
-                else:
-                    dlt = delb [cond]
-                sum  [todo] = self.rom1 (nans, 2, todo) [todo]
-                ans2 [todo] = ans2 [todo] + sum [todo]
-                # Restart the loop
-                inti = 0
-                continue
+            if bk is not None:
+                hitb1 = (ibx == 0) & (self.b.real > bk.real) & cond
+                self.b [hitb1] = bk [hitb1]
+                ibx    [hitb1] = True
+                sum    [hitb1] = self.rom1 (nans, 2, hitb1) [hitb1]
+                ans2   [hitb1] = ans2 [hitb1] + sum [hitb1]
+                todo   [hitb1] = False
             sum  [todo] = self.rom1 (nans, 2, todo) [todo]
             ans1 [todo] = ans2 [todo] + sum [todo]
             self.a = np.array (self.b)
             self.b [cond] = self.b [cond] + dlt
-            if ibx == 0 and self.b.real >= bk.real:
-                # Hit break point. Reset seed and start over.
-                self.b [cond] = bk
-                ibx  = 2
-                dlt  = delb
-                sum  [todo] = self.rom1 (nans, 2, todo) [todo]
-                ans2 [todo] = ans1 [todo] + sum [todo]
-                # Restart the loop
-                inti = 0
-                continue
+            if bk is not None:
+                hitb2 = (ibx == 0) & (self.b.real > bk.real) & cond
+                self.b [hitb2] = bk [hitb2]
+                ibx    [hitb2] = True
+                sum    [hitb2] = self.rom1 (nans, 2, hitb2) [hitb2]
+                ans2   [hitb2] = ans1 [hitb2] + sum [hitb2]
+                todo   [hitb2] = False
             sum  [todo] = self.rom1 (nans, 2, todo) [todo]
             ans2 [todo] = ans1 [todo] + sum [todo]
             # 11
@@ -184,29 +265,34 @@ class Sommerfeld:
             # goto 17
             as1  = ans1
             as2  = ans2
-            denm = 1e-3 * den * crit
             jm   = max (inti - 3, 1)
             converged = np.array (todo)
+            denm = np.zeros (todo.shape, dtype = complex)
+            denm [todo] = 1e-3 * den [todo] * crit
+            den  = np.zeros (ans2.shape, dtype = complex)
+            denm = np.reshape (np.repeat (denm, 6), den.shape)
             for j in range (jm - 1, inti + 1):
                 a1  = q2 [j]
-                den = (abs (a1.real) + abs (a1.imag)) * crit
-                dm  = np.reshape (np.repeat (denm [todo], 6), den.shape)
-                den [den < dm] = dm [den < dm]
+                den [cond] = (abs (a1.real) + abs (a1.imag)) * crit
+                den [(den < denm)] = denm [(den < denm)]
                 a1  = q1 [j] - a1
-                amg = abs (a1.real) + abs (a1.imag)
-                nconv = np.zeros (todo.shape, dtype = bool)
-                nconv [todo] = np.sum (amg > den, axis = 1, dtype = bool)
-                converged [nconv] = False
+                amg = np.zeros (den.shape)
+                amg [cond] = abs (a1.real) + abs (a1.imag)
+                cnd = converged & np.sum (amg > den, axis = 1, dtype = bool)
+                converged [cnd] = False
                 if not converged.any ():
                     break
             if converged.any ():
                 val = np.zeros (sum.shape, dtype = complex)
                 val [todo] = .5 * (q1 [inx] + q2 [inx])
                 sum [converged] = val [converged]
-            # Loop
-            inti += 1
         if not converged.any ():
             raise ValueError ('No convergence in gshank')
+        # Recursive call where we hit the breakpoint
+        if bk is not None and ibx.any ():
+            ibx = ibs & cond
+            self.sum [ibx] = self.gshank \
+                (bk [ibx], delb, nans, ans2 [ibx], ibx) [ibx]
         return sum
     # end def gshank
 
