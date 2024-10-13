@@ -272,6 +272,11 @@ class Test_Base:
               ,  1112.45508 -495.226624j
               , -939.632324 +520.576355j
               ]
+            , [  186.194336 -61.4843178j
+              ,  858.612061 -537.646362j
+              ,  1027.47156 -479.358215j
+              , -1019.78796 +480.458313j
+              ]
             ]
         vals = np.array (vals)
         s = Sommerfeld (4.0, .001, 10.0)
@@ -279,6 +284,7 @@ class Test_Base:
         result = []
         result.append ([erv [0], ezv [0], erh [0], eph [0]])
         result.append ([erv [1], ezv [1], erh [1], eph [1]])
+        result.append ([erv [7], ezv [7], erh [7], eph [7]])
         result = np.array (result)
         assert result.shape == vals.shape
         assert result == pytest.approx (vals, rel = 1e-3)

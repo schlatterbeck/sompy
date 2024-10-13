@@ -84,6 +84,7 @@ class Sommerfeld:
         dlt = np.maximum (self.zph, self.rho)
         ans = self.evlua_bessel (dlt)
         ans [self.is_hankel] = self.evlua_hankel (dlt) [self.is_hankel]
+        ans.T [5] = ans.T [5] * self.ck1
         # Conjugate since NEC uses exp (+jwt)
         erv = np.conjugate (self.ck1sq * ans.T [2])
         ezv = np.conjugate (self.ck1sq * (ans.T [1] + self.ck2sq * ans.T [4]))
@@ -120,27 +121,26 @@ class Sommerfeld:
         sum = self.rom1 (6, 2, self.is_hankel)
         self.a = self.b
         self.b = cp3
-        sum = -sum + self.rom1 (6, 2, self.is_hankel)
-        slope = self.rho / self.zph
-        slope [self.zph <= .001 * self.rho] = 1000
+        sum = -(sum + self.rom1 (6, 2, self.is_hankel))
+        slope = np.ones (self.rho.shape) * 1000
+        cnd   = (self.zph > .001 * self.rho)
+        slope [cnd] = self.rho [cnd] / self.zph [cnd]
         dlt = np.pi / 5 / dlt
-        delta  = -1 + 1j * slope * dlt / np.sqrt (1 + slope * slope)
+        delta  = (-1 + 1j * slope) * dlt / np.sqrt (1 + slope * slope)
         delta2 = -np.conjugate (delta)
-        # Hmpf looks like bk is undef here????? FIXME
-        # Looks like bk really contains bogus value
-        # (-9.41958913e+33,4.59163468e-41)
         bk   = np.zeros (self.rho.shape, dtype = complex)
         ans  = self.gshank (cp1, delta, 6, sum, self.is_hankel)
         rmis = self.rho * (self.ck1.real - 2 * np.pi)
         # This used to be the conditions for goto 8
-        cnd8 = (rmis > 4 * self.rho / self.zph) | (self.rho < 1e-10)
+        cnd8 = (rmis < 4 * np.pi) | (self.rho < 1e-10)
         # This used to be the condition for goto 6
         cnd6 = (self.zph < 1e-10) & np.logical_not (cnd8)
         not68 = np.logical_not (cnd8 | cnd6)
         bk [not68] = ((-self.zph + 1j * self.rho) * (self.ck1 - cp3)) [not68]
         rmis [not68] = -bk [not68].real / np.abs (bk [not68].imag)
         # Another goto 8
-        cnd8 = cnd8 | (not68 & (rmis > 4 * self.rho / self.zph))
+        tmp  = np.logical_not (cnd6) & np.logical_not (cnd8)
+        cnd8 [tmp] = rmis [tmp] > 4 * self.rho [tmp] / self.zph [tmp]
         cnd8 = cnd8 & self.is_hankel
         # Finally all that wasn't 8 is 6
         # Integrate up between branch cuts, then to + infinity
@@ -286,7 +286,7 @@ class Sommerfeld:
                     break
             if converged.any ():
                 val = np.zeros (sum.shape, dtype = complex)
-                val [todo] = .5 * (q1 [inx] + q2 [inx])
+                val [cond] = .5 * (q1 [inx] + q2 [inx])
                 sum [converged] = val [converged]
         if todo.any () and not converged.any ():
             raise ValueError ('No convergence in gshank')
