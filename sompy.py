@@ -1,8 +1,10 @@
 #!/usr/bin/python3
 
 import sys
+import struct
 import numpy as np
 from scipy.special import jv as bessel, hankel1 as hankel
+from rsclib.iter_recipes import batched
 
 # Constants
 c    = 299.8
@@ -21,6 +23,9 @@ class Sommerfeld:
             Note: The original implementation in somnec uses 59.96 as an
             approximation of mu0 * c / (2*pi)
         """
+        self.eps_r = eps_r
+        self.sigma = sigma
+        self.fmhz  = fmhz
         # epscf is the *relative* epsilon (divided by eps0)
         if sigma is not None:
             assert fmhz is not None
@@ -37,16 +42,18 @@ class Sommerfeld:
         # The Y values are THETA (THETA = atan ((z + h) / rho)
         dxa = self.dxa = np.array ([.02, .05, .1])
         dya = self.dya = np.array ([np.pi / 18, np.pi / 36, np.pi / 18])
-        nxa = self.nxa = np.array ([10, 17, 9]) #([11, 17, 9])
-        nya = self.nya = np.array ([10,  5, 8])
-        xsa = self.xsa = np.array ([0.02, .2, .2])
+        nxa = self.nxa = np.array ([11, 17, 9], dtype = int)
+        nya = self.nya = np.array ([10,  5, 8], dtype = int)
+        xsa = self.xsa = np.array ([0., .2, .2])
         ysa = self.ysa = np.array ([0., 0., np.pi / 9])
         xx    = (xsa, xsa + (nxa - 1) * dxa, nxa)
         yy    = (ysa, ysa + (nya - 1) * dya, nya)
         xgrid = [np.linspace (*x) for x in zip (*xx)]
         ygrid = [np.linspace (*y) for y in zip (*yy)]
+        self.grids = [np.meshgrid (x, y, indexing = 'ij')
+                      for x, y in zip (xgrid, ygrid)]
         # avoid computing things twice:
-        xgrid [0] = xgrid [0][:-1]
+        xgrid [0] = xgrid [0][1:-1]
         ygrid [2] = ygrid [2][1:]
         xygrid = [np.meshgrid (x, y, indexing = 'ij')
                   for x, y in zip (xgrid, ygrid)]
@@ -77,6 +84,113 @@ class Sommerfeld:
         # for bessel, we use is_hankel above
     # end def __init__
 
+    @classmethod
+    def from_file (cls, filename = 'somnec.out', byte_order = '='):
+        with open (filename, 'rb') as f:
+            content = f.read ()
+        # single precision version:
+        cl = len (content)
+        if cl == 8632:
+            fmtc = 'f'
+            flen = 4
+        elif cl == xxx:
+            fmtc = 'd'
+            flen = 8
+        else:
+            raise ValueError ('Unknown file format (invalid length: %s)' % l)
+        fmti   = 'L'
+        som    = cls (1.0)
+        som.ar = [[], [], []]
+        # Unpack byte count (4-byte unsigned int)
+        rl = struct.unpack (byte_order + fmti, content [:4]) [0]
+        assert cl - rl == 8
+        off = 4
+        for n, g in enumerate (som.grids):
+            s   = g [0].shape
+            l   = s [0] * s [1] * 2
+            bl  = l * flen
+            fmt = byte_order + str (l) + fmtc
+            for e in range (4):
+                # ar arrays are complex
+                flt = list (struct.unpack (fmt, content [off:off+bl]))
+                itr = iter (flt)
+                cpx = [a + 1j * b for a, b in zip (itr, itr)]
+                som.ar [n].append (np.reshape (cpx, g [0].T.shape).T)
+                off += bl
+        fmt_c = byte_order + '2' + fmtc
+        rl, im = struct.unpack (fmt_c, content [off:off+8])
+        som.epscf = som.eps_r = rl + 1j * im
+        off += 8
+        fmt_3 = byte_order + '3' + fmtc
+        som.dxa = np.array (list (struct.unpack (fmt_3, content [off:off+12])))
+        off += 12
+        som.dya = np.array (list (struct.unpack (fmt_3, content [off:off+12])))
+        off += 12
+        som.xsa = np.array (list (struct.unpack (fmt_3, content [off:off+12])))
+        off += 12
+        som.ysa = np.array (list (struct.unpack (fmt_3, content [off:off+12])))
+        off += 12
+        fmt_i = byte_order + '3' + fmti
+        som.nxa = list (struct.unpack (fmt_i, content [off:off+12]))
+        som.nxa = np.array (som.nxa, dtype = int)
+        off += 12
+        som.nya = list (struct.unpack (fmt_i, content [off:off+12]))
+        som.nya = np.array (som.nya, dtype = int)
+        off += 12
+
+        # At the end we have the length again
+        rl = struct.unpack (byte_order + fmti, content [off:off+4]) [0]
+        assert cl - rl == 8
+        return som
+    # end def from_file
+
+    def _fmt_complex (self, c):
+        if c.imag:
+            v = '%.5E% .5E' % (c.real, c.imag)
+        else:
+            v = '%.5E' % c.real
+        return v
+    # end def _fmt_complex
+
+    def as_text (self):
+        r = []
+        if isinstance (self.eps_r, complex):
+            v = '%.6f % .6fj' % (self.eps_r.real, self.eps_r.imag)
+        else:
+            v = '%.6f' % self.eps_r
+        r.append ('Relative Dielectric Constant = %s' % v)
+        if self.sigma is not None:
+            r.append ('Conductivity (Mhos/Meter) = %13g' % self.sigma)
+        if self.fmhz is not None:
+            r.append ('Frequency, MHz = %s' % self.fmhz)
+        r.append (' NEC GROUND INTERPOLATION GRID')
+        r.append \
+            ( ' DIELECTRIC CONSTANT= %.5E% .5E'
+            % (self.epscf.real, self.epscf.imag)
+            )
+        r.extend (('', '', ''))
+        names = ('ERV', 'EZV', 'ERH', 'EPH')
+        for n, (g, ar) in enumerate (zip (self.grids, self.ar)):
+            r.append (' GRID %d' % (n + 1))
+            r.append \
+                ( '    R(1)= %.4f   DR=  %.4f   NR=  %d'
+                % (self.xsa [n], self.dxa [n], self.nxa [n])
+                )
+            r.append \
+                ( ' THET(1)= %.4f   DTH= %.4f   NTH= %d'
+                % (self.ysa [n], self.dya [n], self.nya [n])
+                )
+            for k, sect in enumerate (ar):
+                r.extend (('', '', ''))
+                r.append (' ' + names [k])
+                for s, line in enumerate (sect):
+                    r.append (' IR= %d' % (s + 1))
+                    for b in batched (iter (line), 5):
+                        r.append \
+                            (' ' + ' '.join (self._fmt_complex (v) for v in b))
+        return '\n'.join (r)
+    # end def as_text
+
     def compute (self):
         erv, ezv, erh, eph = self.evlua ()
         rk  = 2 * np.pi * self.r
@@ -85,33 +199,31 @@ class Sommerfeld:
         ezv = ezv * con
         erh = erh * con
         eph = eph * con
-        self.ar1 = []
-        self.ar2 = []
-        self.ar3 = []
-        self.ar1.append (np.reshape (erv [:90],        ( 9, 10)))
-        self.ar2.append (np.reshape (erv [90:90+5*17], (17,  5)))
-        self.ar3.append (np.reshape (erv [90+5*17:],   ( 9,  7)))
-        self.ar1.append (np.reshape (ezv [:90],        ( 9, 10)))
-        self.ar2.append (np.reshape (ezv [90:90+5*17], (17,  5)))
-        self.ar3.append (np.reshape (ezv [90+5*17:],   ( 9,  7)))
-        self.ar1.append (np.reshape (erh [:90],        ( 9, 10)))
-        self.ar2.append (np.reshape (erh [90:90+5*17], (17,  5)))
-        self.ar3.append (np.reshape (erh [90+5*17:],   ( 9,  7)))
-        self.ar1.append (np.reshape (eph [:90],        ( 9, 10)))
-        self.ar2.append (np.reshape (eph [90:90+5*17], (17,  5)))
-        self.ar3.append (np.reshape (eph [90+5*17:],   ( 9,  7)))
+        self.ar = [[], [], []]
+        self.ar [0].append (np.reshape (erv [:90],        ( 9, 10)))
+        self.ar [1].append (np.reshape (erv [90:90+5*17], (17,  5)))
+        self.ar [2].append (np.reshape (erv [90+5*17:],   ( 9,  7)))
+        self.ar [0].append (np.reshape (ezv [:90],        ( 9, 10)))
+        self.ar [1].append (np.reshape (ezv [90:90+5*17], (17,  5)))
+        self.ar [2].append (np.reshape (ezv [90+5*17:],   ( 9,  7)))
+        self.ar [0].append (np.reshape (erh [:90],        ( 9, 10)))
+        self.ar [1].append (np.reshape (erh [90:90+5*17], (17,  5)))
+        self.ar [2].append (np.reshape (erh [90+5*17:],   ( 9,  7)))
+        self.ar [0].append (np.reshape (eph [:90],        ( 9, 10)))
+        self.ar [1].append (np.reshape (eph [90:90+5*17], (17,  5)))
+        self.ar [2].append (np.reshape (eph [90+5*17:],   ( 9,  7)))
 
         # rows not computed for grid1
-        a10 = list (self.ar3 [0][0]) + list (self.ar2 [0][0][[0,2,4]])
-        a11 = list (self.ar3 [1][0]) + list (self.ar2 [1][0][[0,2,4]])
-        a12 = list (self.ar3 [2][0]) + list (self.ar2 [2][0][[0,2,4]])
-        a13 = list (self.ar3 [3][0]) + list (self.ar2 [3][0][[0,2,4]])
+        a10 = list (self.ar [1][0][0][[0,2,4]]) + list (self.ar [2][0][0])
+        a11 = list (self.ar [1][1][0][[0,2,4]]) + list (self.ar [2][1][0])
+        a12 = list (self.ar [1][2][0][[0,2,4]]) + list (self.ar [2][2][0])
+        a13 = list (self.ar [1][3][0][[0,2,4]]) + list (self.ar [2][3][0])
 
         # cols not computed for grid2
-        a30 = list (self.ar2 [0][[0,2,4,6,8,10,12,14,16]].T [4])
-        a31 = list (self.ar2 [1][[0,2,4,6,8,10,12,14,16]].T [4])
-        a32 = list (self.ar2 [2][[0,2,4,6,8,10,12,14,16]].T [4])
-        a33 = list (self.ar2 [3][[0,2,4,6,8,10,12,14,16]].T [4])
+        a30 = list (self.ar [1][0][[0,2,4,6,8,10,12,14,16]].T [4])
+        a31 = list (self.ar [1][1][[0,2,4,6,8,10,12,14,16]].T [4])
+        a32 = list (self.ar [1][2][[0,2,4,6,8,10,12,14,16]].T [4])
+        a33 = list (self.ar [1][3][[0,2,4,6,8,10,12,14,16]].T [4])
 
         # Fill grid1 for r equal to zero
         cl2  = -(0 +188.370j) * (self.epscf - 1) / (self.epscf + 1)
@@ -133,17 +245,16 @@ class Sommerfeld:
         erv [-1] = 0j
         erh [-1] = cl2 - .5 * cl1
         eph [-1] = -erh [-1]
-        # Insert missing rows into ar1
-        self.ar1 [0] = np.vstack ((erv, self.ar1 [0], a10))
-        self.ar1 [1] = np.vstack ((ezv, self.ar1 [1], a11))
-        self.ar1 [2] = np.vstack ((erh, self.ar1 [2], a12))
-        self.ar1 [3] = np.vstack ((eph, self.ar1 [3], a13))
-        # Insert missing col into ar2
-        self.ar3 [0] = np.vstack ((self.ar3 [0].T, a30)).T
-        self.ar3 [1] = np.vstack ((self.ar3 [1].T, a31)).T
-        self.ar3 [2] = np.vstack ((self.ar3 [2].T, a32)).T
-        self.ar3 [3] = np.vstack ((self.ar3 [3].T, a33)).T
-
+        # Insert missing rows into ar [0]
+        self.ar [0][0] = np.vstack ((erv, self.ar [0][0], a10))
+        self.ar [0][1] = np.vstack ((ezv, self.ar [0][1], a11))
+        self.ar [0][2] = np.vstack ((erh, self.ar [0][2], a12))
+        self.ar [0][3] = np.vstack ((eph, self.ar [0][3], a13))
+        # Insert missing col into ar [2]
+        self.ar [2][0] = np.vstack ((a30, self.ar [2][0].T)).T
+        self.ar [2][1] = np.vstack ((a31, self.ar [2][1].T)).T
+        self.ar [2][2] = np.vstack ((a32, self.ar [2][2].T)).T
+        self.ar [2][3] = np.vstack ((a33, self.ar [2][3].T)).T
     # end def compute
 
     def evlua (self):
@@ -595,5 +706,7 @@ class Sommerfeld:
 # end class Sommerfeld
 
 if __name__ == '__main__':
-    s = Sommerfeld (4.0, .001, 10.0)
-    s.compute ()
+    #s = Sommerfeld (4.0, .001, 10.0)
+    #s.compute ()
+    s = Sommerfeld.from_file ('bla')
+    print (s.as_text ())
