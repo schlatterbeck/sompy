@@ -274,21 +274,20 @@ class Sommerfeld:
     # end def evlua
 
     def evlua_bessel (self, dlt):
-        self.sum = np.zeros (self.rho.shape, dtype = complex)
         self.a   = np.zeros (self.rho.shape, dtype = complex)
         dlt = 1 / dlt
         tkm = (1-1j) * .1 * self.tkmag
         self.b = np.ones (self.rho.shape, dtype = complex) * tkm
         cnd  = (dlt <  self.tkmag) & self.is_bessel
         cnd2 = (dlt >= self.tkmag) & self.is_bessel
-        sum = self.rom1 (6, 2, cnd)
+        all = self.rom1 (6, 2, cnd)
         tmp = self.b
         dd  = (1-1j) * dlt
         self.b = np.ones (self.rho.shape, dtype = complex) * dd
-        sum [cnd2] = self.rom1 (6, 2, cnd2) [cnd2]
+        all [cnd2] = self.rom1 (6, 2, cnd2) [cnd2]
         self.a = tmp
-        sum [cnd] = sum [cnd] + self.rom1 (6, 2, cnd) [cnd]
-        return self.gshank (self.b, np.pi / 5 * dlt, 6, sum, self.is_bessel)
+        all [cnd] = all [cnd] + self.rom1 (6, 2, cnd) [cnd]
+        return self.gshank (self.b, np.pi / 5 * dlt, 6, all, self.is_bessel)
     # end def evlua_bessel
 
     def evlua_hankel (self, dlt):
@@ -298,10 +297,10 @@ class Sommerfeld:
         cp3 = ones * (2.04 * np.pi -.4j * np.pi)
         self.a = cp1
         self.b = cp2
-        sum = self.rom1 (6, 2, self.is_hankel)
+        all = self.rom1 (6, 2, self.is_hankel)
         self.a = self.b
         self.b = cp3
-        sum = -(sum + self.rom1 (6, 2, self.is_hankel))
+        all = -(all + self.rom1 (6, 2, self.is_hankel))
         slope = np.ones (self.rho.shape) * 1000
         cnd   = (self.zph > .001 * self.rho)
         slope [cnd] = self.rho [cnd] / self.zph [cnd]
@@ -309,7 +308,7 @@ class Sommerfeld:
         delta  = (-1 + 1j * slope) * dlt / np.sqrt (1 + slope * slope)
         delta2 = -np.conjugate (delta)
         bk   = np.zeros (self.rho.shape, dtype = complex)
-        ans  = self.gshank (cp1, delta, 6, sum, self.is_hankel)
+        ans  = self.gshank (cp1, delta, 6, all, self.is_hankel)
         rmis = self.rho * (self.ck1.real - 2 * np.pi)
         # This used to be the conditions for goto 8
         cnd8 = (rmis < 4 * np.pi) | (self.rho < 1e-10)
@@ -328,22 +327,22 @@ class Sommerfeld:
         cp1 [cnd6] = self.ck1 - (.1 + .2j)
         cp2 [cnd6] = cp1 [cnd6] + .2
         bk  [cnd6] = 0 + 1j * dlt [cnd6]
-        sum [cnd6] = self.gshank (cp1, bk, 6, ans, cnd6) [cnd6]
+        all [cnd6] = self.gshank (cp1, bk, 6, ans, cnd6) [cnd6]
         self.a = cp1
         self.b = cp2
         ans [cnd6] = self.rom1 (6, 1, cnd6) [cnd6]
-        ans [cnd6] = ans [cnd6] - sum [cnd6]
-        sum [cnd6] = self.gshank (cp3, bk, 6, ans, cnd6) [cnd6]
-        ans [cnd6] = self.gshank (cp2, delta2, 6, sum, cnd6) [cnd6]
+        ans [cnd6] = ans [cnd6] - all [cnd6]
+        all [cnd6] = self.gshank (cp3, bk, 6, ans, cnd6) [cnd6]
+        ans [cnd6] = self.gshank (cp2, delta2, 6, all, cnd6) [cnd6]
         # cnd8
         # Integrate below branch points, the to + infinity
-        sum  [cnd8] = -ans [cnd8]
+        all  [cnd8] = -ans [cnd8]
         rmis [cnd8] = self.ck1.real * 1.01
         rmis [cnd8 & (2 * np.pi + 1 > rmis)] = 2 * np.pi + 1
         bk   [cnd8] = rmis [cnd8] + .99j * self.ck1.imag
         delta [cnd8] = bk [cnd8] - cp3 [cnd8]
         delta [cnd8] = delta [cnd8] * dlt [cnd8] / np.abs (delta [cnd8])
-        ans [cnd8] = self.gshank (cp3, delta, 6, sum, cnd8, bk, delta2) [cnd8]
+        ans [cnd8] = self.gshank (cp3, delta, 6, all, cnd8, bk, delta2) [cnd8]
         return ans
     # end def evlua_hankel
 
@@ -383,7 +382,7 @@ class Sommerfeld:
         # label 2
         todo = np.array (cond, dtype = bool)
         done = np.logical_not (todo)
-        sum  = np.zeros (cond.shape + (nans,), dtype = complex)
+        all  = np.zeros (cond.shape + (nans,), dtype = complex)
         if bk is None:
             ibx = np.ones (cond.shape, dtype = bool)
         else:
@@ -397,22 +396,22 @@ class Sommerfeld:
                 hitb1 = (ibx == 0) & (self.b.real > bk.real) & cond
                 self.b [hitb1] = bk [hitb1]
                 ibx    [hitb1] = True
-                sum    [hitb1] = self.rom1 (nans, 2, hitb1) [hitb1]
-                ans2   [hitb1] = ans2 [hitb1] + sum [hitb1]
+                all    [hitb1] = self.rom1 (nans, 2, hitb1) [hitb1]
+                ans2   [hitb1] = ans2 [hitb1] + all [hitb1]
                 todo   [hitb1] = False
-            sum  [todo] = self.rom1 (nans, 2, todo) [todo]
-            ans1 [todo] = ans2 [todo] + sum [todo]
+            all  [todo] = self.rom1 (nans, 2, todo) [todo]
+            ans1 [todo] = ans2 [todo] + all [todo]
             self.a = np.array (self.b)
             self.b [cond] = self.b [cond] + dlt
             if bk is not None:
                 hitb2 = (ibx == 0) & (self.b.real > bk.real) & cond
                 self.b [hitb2] = bk [hitb2]
                 ibx    [hitb2] = True
-                sum    [hitb2] = self.rom1 (nans, 2, hitb2) [hitb2]
-                ans2   [hitb2] = ans1 [hitb2] + sum [hitb2]
+                all    [hitb2] = self.rom1 (nans, 2, hitb2) [hitb2]
+                ans2   [hitb2] = ans1 [hitb2] + all [hitb2]
                 todo   [hitb2] = False
-            sum  [todo] = self.rom1 (nans, 2, todo) [todo]
-            ans2 [todo] = ans1 [todo] + sum [todo]
+            all  [todo] = self.rom1 (nans, 2, todo) [todo]
+            ans2 [todo] = ans1 [todo] + all [todo]
             if not todo.any ():
                 converged = np.array (todo)
                 break
@@ -465,17 +464,17 @@ class Sommerfeld:
                 if not converged.any ():
                     break
             if converged.any ():
-                val = np.zeros (sum.shape, dtype = complex)
+                val = np.zeros (all.shape, dtype = complex)
                 val [cond] = .5 * (q1 [inx] + q2 [inx])
-                sum [converged] = val [converged]
+                all [converged] = val [converged]
         if todo.any () and not converged.any ():
             raise ValueError ('No convergence in gshank')
         # Recursive call where we hit the breakpoint
         if bk is not None and ibx.any ():
             ibx = ibx & cond
-            sum [ibx] = self.gshank \
+            all [ibx] = self.gshank \
                 (bk [ibx], delb, nans, ans2 [ibx], ibx) [ibx]
-        return sum
+        return all
     # end def gshank
 
     def rom1 (self, n, nx, todo):
@@ -485,16 +484,16 @@ class Sommerfeld:
         ze    = 1. # end of integration
         ep    = 1 / (1e4 * nm) # for epsilon comparison
         zend  = ze - ep
-        sum   = np.zeros (self.rho.shape + (n,), dtype = complex)
+        all   = np.zeros (self.rho.shape + (n,), dtype = complex)
         todo  = np.array (todo, dtype = bool)
         ns    = np.ones  (self.rho.shape, dtype = int) * nx
         nt    = np.zeros (self.rho.shape)
-        g1    = np.zeros (sum.shape, dtype = complex)
+        g1    = np.zeros (all.shape, dtype = complex)
         g1 [todo] = self.saoa (z, todo)
-        g2    = np.zeros (sum.shape, dtype = complex)
-        g3    = np.zeros (sum.shape, dtype = complex)
-        g4    = np.zeros (sum.shape, dtype = complex)
-        g5    = np.zeros (sum.shape, dtype = complex)
+        g2    = np.zeros (all.shape, dtype = complex)
+        g3    = np.zeros (all.shape, dtype = complex)
+        g4    = np.zeros (all.shape, dtype = complex)
+        g5    = np.zeros (all.shape, dtype = complex)
         if self.debug:
             count = np.zeros (self.rho.shape, dtype = int)
         # This used to be label 2
@@ -528,7 +527,7 @@ class Sommerfeld:
                 nogo [(tri.real > rx) | (tri.imag > rx)] = 1
                 ngo = np.sum (nogo, axis = 1, dtype = bool)
                 go  = np.logical_not (ngo) & ngo2
-                sum [go] = sum [go] + t10 [go]
+                all [go] = all [go] + t10 [go]
                 nt  [go] = nt  [go] + 2
                 # This is only be called for ngo == 1:
                 # It won't do anything if the prev produced nogo=0
@@ -547,7 +546,7 @@ class Sommerfeld:
                 nogo2 [(tri.real > rx) | (tri.imag > rx)] = 1
                 ngo2 = np.sum (nogo2, axis = 1, dtype = bool)
                 go   = np.logical_not (ngo2) & ngo
-                sum [go] = sum [go] + t20 [go]
+                all [go] = all [go] + t20 [go]
                 nt  [go] = nt  [go] + 1
 
                 if self.verbose and ngo2.any ():
@@ -585,7 +584,7 @@ class Sommerfeld:
                     d [k] = 0
                 d [k] += 1
             import pdb; pdb.set_trace ()
-        return sum
+        return all
     # end def rom1
 
     def saoa (self, t, cond = None):
