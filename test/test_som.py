@@ -84,7 +84,7 @@ class Test_Base:
         s = Sommerfeld (4.0, .001, 10.0)
         s.a = np.zeros (s.rho.shape, dtype = complex)
         s.b = np.ones  (s.rho.shape, dtype = complex) * (53.2088928-53.2088928j)
-        r = s.rom1 (6, 2, s.is_bessel)
+        r = s.rom1 (2, s.is_bessel)
         cond = np.zeros (s.rho.shape, dtype = bool)
         cond [0] = cond [7] = 1
         r = r [cond]
@@ -107,7 +107,7 @@ class Test_Base:
         s = Sommerfeld (4.0, .001, 10.0)
         s.a = np.ones (s.rho.shape, dtype = complex) * 2.51327419j
         s.b = np.ones (s.rho.shape, dtype = complex) * (3.76991153 -1.2566371j)
-        r = s.rom1 (6, 2, s.is_hankel)
+        r = s.rom1 (2, s.is_hankel)
         cond = np.zeros (s.rho.shape, dtype = bool)
         cond [0] = cond [7] = 1
         r = r [cond]
@@ -157,7 +157,7 @@ class Test_Base:
         d = np.array ([33.4321327 +0j, 31.9005718 +0j])
         cond = np.zeros (s.rho.shape, dtype = bool)
         cond [7] = cond [8] = 1
-        r = s.gshank (b, d, 6, seed, cond) [cond]
+        r = s.gshank (b, d, seed, cond) [cond]
         assert r.shape == vals.shape
         assert r == pytest.approx (vals, rel = 1e-3)
     # end def test_gshank_bessel
@@ -204,7 +204,7 @@ class Test_Base:
         d = np.array ([-0.0314159133 +31.4159126j, -5.53947687 +31.4159298j])
         cond = np.zeros (s.rho.shape, dtype = bool)
         cond [0] = cond [1] = 1
-        r = s.gshank (st, d, 6, seed, cond) [cond]
+        r = s.gshank (st, d, seed, cond) [cond]
         assert r.shape == vals.shape
         assert r == pytest.approx (vals, rel = 1e-3)
     # end def test_gshank_hankel
@@ -255,7 +255,7 @@ class Test_Base:
         bk [1] = 12.9941263 +2.73043895j
         cond = np.zeros (s.rho.shape, dtype = bool)
         cond [0] = cond [1] = 1
-        r = s.gshank (st, d, 6, seed, cond, bk, d2) [cond]
+        r = s.gshank (st, d, seed, cond, bk, d2) [cond]
         assert r.shape == vals.shape
         assert r == pytest.approx (vals, rel = 1e-3)
     # end def test_gshank_hankel_recursive

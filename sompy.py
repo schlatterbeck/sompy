@@ -16,6 +16,8 @@ class Sommerfeld:
 
     verbose = False
     debug   = False
+    # Fundamental constants
+    nfunc   = 6 # The 6 Sommerfeld integrals (unlikely to change)
 
     def __init__ (self, eps_r, sigma = None, fmhz = None):
         """ The original implementation used the case where sigma < 0 to
@@ -280,14 +282,17 @@ class Sommerfeld:
         self.b = np.ones (self.rho.shape, dtype = complex) * tkm
         cnd  = (dlt <  self.tkmag) & self.is_bessel
         cnd2 = (dlt >= self.tkmag) & self.is_bessel
-        all = self.rom1 (6, 2, cnd)
+        all = np.zeros (dlt.shape + (self.nfunc,), dtype = complex)
+        if cnd2.any ():
+            all [cnd2] = self.rom1 (2, cnd2) [cnd2]
         tmp = self.b
         dd  = (1-1j) * dlt
         self.b = np.ones (self.rho.shape, dtype = complex) * dd
-        all [cnd2] = self.rom1 (6, 2, cnd2) [cnd2]
+        all [cnd] = self.rom1 (2, cnd) [cnd]
         self.a = tmp
-        all [cnd] = all [cnd] + self.rom1 (6, 2, cnd) [cnd]
-        return self.gshank (self.b, np.pi / 5 * dlt, 6, all, self.is_bessel)
+        if cnd2.any ():
+            all [cnd2] = all [cnd2] + self.rom1 (2, cnd2) [cnd2]
+        return self.gshank (self.b, np.pi / 5 * dlt, all, self.is_bessel)
     # end def evlua_bessel
 
     def evlua_hankel (self, dlt):
@@ -297,10 +302,10 @@ class Sommerfeld:
         cp3 = ones * (2.04 * np.pi -.4j * np.pi)
         self.a = cp1
         self.b = cp2
-        all = self.rom1 (6, 2, self.is_hankel)
+        all = self.rom1 (2, self.is_hankel)
         self.a = self.b
         self.b = cp3
-        all = -(all + self.rom1 (6, 2, self.is_hankel))
+        all = -(all + self.rom1 (2, self.is_hankel))
         slope = np.ones (self.rho.shape) * 1000
         cnd   = (self.zph > .001 * self.rho)
         slope [cnd] = self.rho [cnd] / self.zph [cnd]
@@ -308,7 +313,7 @@ class Sommerfeld:
         delta  = (-1 + 1j * slope) * dlt / np.sqrt (1 + slope * slope)
         delta2 = -np.conjugate (delta)
         bk   = np.zeros (self.rho.shape, dtype = complex)
-        ans  = self.gshank (cp1, delta, 6, all, self.is_hankel)
+        ans  = self.gshank (cp1, delta, all, self.is_hankel)
         rmis = self.rho * (self.ck1.real - 2 * np.pi)
         # This used to be the conditions for goto 8
         cnd8 = (rmis < 4 * np.pi) | (self.rho < 1e-10)
@@ -324,29 +329,32 @@ class Sommerfeld:
         # Finally all that wasn't 8 is 6
         # Integrate up between branch cuts, then to + infinity
         cnd6 = np.logical_not (cnd8) & self.is_hankel
-        cp1 [cnd6] = self.ck1 - (.1 + .2j)
-        cp2 [cnd6] = cp1 [cnd6] + .2
-        bk  [cnd6] = 0 + 1j * dlt [cnd6]
-        all [cnd6] = self.gshank (cp1, bk, 6, ans, cnd6) [cnd6]
-        self.a = cp1
-        self.b = cp2
-        ans [cnd6] = self.rom1 (6, 1, cnd6) [cnd6]
-        ans [cnd6] = ans [cnd6] - all [cnd6]
-        all [cnd6] = self.gshank (cp3, bk, 6, ans, cnd6) [cnd6]
-        ans [cnd6] = self.gshank (cp2, delta2, 6, all, cnd6) [cnd6]
+        if cnd6.any ():
+            cp1 [cnd6] = self.ck1 - (.1 + .2j)
+            cp2 [cnd6] = cp1 [cnd6] + .2
+            bk  [cnd6] = 0 + 1j * dlt [cnd6]
+            all [cnd6] = self.gshank (cp1, bk, ans, cnd6) [cnd6]
+            self.a = cp1
+            self.b = cp2
+            ans [cnd6] = self.rom1 (1, cnd6) [cnd6]
+            ans [cnd6] = ans [cnd6] - all [cnd6]
+            all [cnd6] = self.gshank (cp3, bk, ans, cnd6) [cnd6]
+            ans [cnd6] = self.gshank (cp2, delta2, all, cnd6) [cnd6]
         # cnd8
         # Integrate below branch points, the to + infinity
-        all  [cnd8] = -ans [cnd8]
-        rmis [cnd8] = self.ck1.real * 1.01
-        rmis [cnd8 & (2 * np.pi + 1 > rmis)] = 2 * np.pi + 1
-        bk   [cnd8] = rmis [cnd8] + .99j * self.ck1.imag
-        delta [cnd8] = bk [cnd8] - cp3 [cnd8]
-        delta [cnd8] = delta [cnd8] * dlt [cnd8] / np.abs (delta [cnd8])
-        ans [cnd8] = self.gshank (cp3, delta, 6, all, cnd8, bk, delta2) [cnd8]
+        if cnd8.any ():
+            all  [cnd8] = -ans [cnd8]
+            rmis [cnd8] = self.ck1.real * 1.01
+            rmis [cnd8 & (2 * np.pi + 1 > rmis)] = 2 * np.pi + 1
+            bk   [cnd8] = rmis [cnd8] + .99j * self.ck1.imag
+            delta [cnd8] = bk [cnd8] - cp3 [cnd8]
+            delta [cnd8] = delta [cnd8] * dlt [cnd8] / np.abs (delta [cnd8])
+            ans [cnd8] = self.gshank \
+                (cp3, delta, all, cnd8, bk, delta2) [cnd8]
         return ans
     # end def evlua_hankel
 
-    def gshank (self, start, dela, nans, seed, cond, bk = None, delb = None):
+    def gshank (self, start, dela, seed, cond, bk = None, delb = None):
         """ Integrates the 6 Sommerfeld integrals from start to infinity
             (until convergence) in lambda. At the break point, bk, the
             step increment may be changed from dela to delb. Shank's
@@ -358,7 +366,7 @@ class Sommerfeld:
         """
         crit = 1e-4
         maxh = 20
-        shape = cond.shape + (nans,)
+        shape = cond.shape + (self.nfunc,)
         if seed.shape == shape:
             seed = seed [cond]
         if dela.shape [0] == seed.shape [0]:
@@ -382,7 +390,7 @@ class Sommerfeld:
         # label 2
         todo = np.array (cond, dtype = bool)
         done = np.logical_not (todo)
-        all  = np.zeros (cond.shape + (nans,), dtype = complex)
+        all  = np.zeros (cond.shape + (self.nfunc,), dtype = complex)
         if bk is None:
             ibx = np.ones (cond.shape, dtype = bool)
         else:
@@ -396,10 +404,10 @@ class Sommerfeld:
                 hitb1 = (ibx == 0) & (self.b.real > bk.real) & cond
                 self.b [hitb1] = bk [hitb1]
                 ibx    [hitb1] = True
-                all    [hitb1] = self.rom1 (nans, 2, hitb1) [hitb1]
+                all    [hitb1] = self.rom1 (2, hitb1) [hitb1]
                 ans2   [hitb1] = ans2 [hitb1] + all [hitb1]
                 todo   [hitb1] = False
-            all  [todo] = self.rom1 (nans, 2, todo) [todo]
+            all  [todo] = self.rom1 (2, todo) [todo]
             ans1 [todo] = ans2 [todo] + all [todo]
             self.a = np.array (self.b)
             self.b [cond] = self.b [cond] + dlt
@@ -407,10 +415,10 @@ class Sommerfeld:
                 hitb2 = (ibx == 0) & (self.b.real > bk.real) & cond
                 self.b [hitb2] = bk [hitb2]
                 ibx    [hitb2] = True
-                all    [hitb2] = self.rom1 (nans, 2, hitb2) [hitb2]
+                all    [hitb2] = self.rom1 (2, hitb2) [hitb2]
                 ans2   [hitb2] = ans1 [hitb2] + all [hitb2]
                 todo   [hitb2] = False
-            all  [todo] = self.rom1 (nans, 2, todo) [todo]
+            all  [todo] = self.rom1 (2, todo) [todo]
             ans2 [todo] = ans1 [todo] + all [todo]
             if not todo.any ():
                 converged = np.array (todo)
@@ -472,19 +480,18 @@ class Sommerfeld:
         # Recursive call where we hit the breakpoint
         if bk is not None and ibx.any ():
             ibx = ibx & cond
-            all [ibx] = self.gshank \
-                (bk [ibx], delb, nans, ans2 [ibx], ibx) [ibx]
+            all [ibx] = self.gshank (bk [ibx], delb, ans2 [ibx], ibx) [ibx]
         return all
     # end def gshank
 
-    def rom1 (self, n, nx, todo):
+    def rom1 (self, nx, todo):
         nm    = 1 << 17
         rx    = 1e-4
         z     = np.zeros (self.rho.shape)
         ze    = 1. # end of integration
         ep    = 1 / (1e4 * nm) # for epsilon comparison
         zend  = ze - ep
-        all   = np.zeros (self.rho.shape + (n,), dtype = complex)
+        all   = np.zeros (self.rho.shape + (self.nfunc,), dtype = complex)
         todo  = np.array (todo, dtype = bool)
         ns    = np.ones  (self.rho.shape, dtype = int) * nx
         nt    = np.zeros (self.rho.shape)
@@ -496,6 +503,9 @@ class Sommerfeld:
         g5    = np.zeros (all.shape, dtype = complex)
         if self.debug:
             count = np.zeros (self.rho.shape, dtype = int)
+            ish   = (todo & self.is_hankel).any ()
+            isb   = (todo & self.is_bessel).any ()
+            assert not (ish and isb)
         # This used to be label 2
         while True:
             dz = 1 / ns
@@ -510,13 +520,16 @@ class Sommerfeld:
             g5 [todo] = self.saoa ((z + dz), todo)
             # This used to be label 4
             ngo2 = todo
+            t00 = np.zeros (g1.shape, dtype = complex)
+            t01 = np.zeros (g1.shape, dtype = complex)
+            t10 = np.zeros (g1.shape, dtype = complex)
+            t02 = np.zeros (g1.shape, dtype = complex)
+            t11 = np.zeros (g1.shape, dtype = complex)
+            t20 = np.zeros (g1.shape, dtype = complex)
             while ngo2.any ():
                 if self.debug:
                     count [ngo2] = count [ngo2] + 1
                 nogo = np.zeros (g1.shape, dtype = bool)
-                t00  = np.zeros (g1.shape, dtype = complex)
-                t01  = np.zeros (g1.shape, dtype = complex)
-                t10  = np.zeros (g1.shape, dtype = complex)
                 t00 [ngo2] = (g1 [ngo2] + g5 [ngo2]) * dzotn [ngo2]
                 t01 [ngo2] = ( t00 [ngo2]
                              + dz [..., np.newaxis][ngo2] * g3 [ngo2]) * .5
@@ -533,9 +546,6 @@ class Sommerfeld:
                 # It won't do anything if the prev produced nogo=0
                 g2 [ngo] = self.saoa (z + dz * .25, ngo)
                 g4 [ngo] = self.saoa (z + dz * .75, ngo)
-                t02 = np.zeros (t01.shape, dtype = complex)
-                t11 = np.zeros (t01.shape, dtype = complex)
-                t20 = np.zeros (t01.shape, dtype = complex)
                 t02 [ngo] = (t01 [ngo] + dzotn [ngo] * (g2 + g4) [ngo]) * .5
                 t11 [ngo] = ( 4 * t02 [ngo] - t01 [ngo]) / 3
                 t20 [ngo] = (16 * t11 [ngo] - t10 [ngo]) / 15
@@ -583,7 +593,11 @@ class Sommerfeld:
                 if k not in d:
                     d [k] = 0
                 d [k] += 1
-            import pdb; pdb.set_trace ()
+            n = 'BH' [ish]
+            print ('%s:' % n, d, file = sys.stderr)
+            big = count >= 100
+            if big.any ():
+                print ('BIG:', list (np.where (big) [0]), file = sys.stderr)
         return all
     # end def rom1
 
