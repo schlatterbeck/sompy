@@ -5,6 +5,7 @@ import struct
 import numpy as np
 from scipy.special import jv as bessel, hankel1 as hankel
 from rsclib.iter_recipes import batched
+from argparse import ArgumentParser
 
 # Constants
 c    = 299.8
@@ -86,6 +87,8 @@ class Sommerfeld:
 
     @classmethod
     def from_file (cls, filename = 'somnec.out', byte_order = '='):
+        """ Read somnec grid from file
+        """
         with open (filename, 'rb') as f:
             content = f.read ()
         # single precision version:
@@ -93,7 +96,7 @@ class Sommerfeld:
         if cl == 8632:
             fmtc = 'f'
             flen = 4
-        elif cl == xxx:
+        elif cl == 17232:
             fmtc = 'd'
             flen = 8
         else:
@@ -118,18 +121,15 @@ class Sommerfeld:
                 som.ar [n].append (np.reshape (cpx, g [0].T.shape).T)
                 off += bl
         fmt_c = byte_order + '2' + fmtc
-        rl, im = struct.unpack (fmt_c, content [off:off+8])
+        rl, im = struct.unpack (fmt_c, content [off:off+flen*2])
         som.epscf = som.eps_r = rl + 1j * im
-        off += 8
+        off += flen * 2
         fmt_3 = byte_order + '3' + fmtc
-        som.dxa = np.array (list (struct.unpack (fmt_3, content [off:off+12])))
-        off += 12
-        som.dya = np.array (list (struct.unpack (fmt_3, content [off:off+12])))
-        off += 12
-        som.xsa = np.array (list (struct.unpack (fmt_3, content [off:off+12])))
-        off += 12
-        som.ysa = np.array (list (struct.unpack (fmt_3, content [off:off+12])))
-        off += 12
+        fl3 = 3 * flen
+        for x in 'dxa', 'dya', 'xsa', 'ysa':
+            cnt = content [off:off+fl3]
+            setattr (som, x, np.array (list (struct.unpack (fmt_3, cnt))))
+            off += fl3
         fmt_i = byte_order + '3' + fmti
         som.nxa = list (struct.unpack (fmt_i, content [off:off+12]))
         som.nxa = np.array (som.nxa, dtype = int)
@@ -703,10 +703,93 @@ class Sommerfeld:
         return tr + 1j * ti
     # end def test
 
+    def to_file (self, fn, fmtc = 'f', byte_order = '='):
+        """ Dump computed (or read) somnec grid to file
+            By default we use single precision float (compatible with
+            the Fortran version), if double precisions is desired, use
+            fmtc = 'd', note that the computation is accurate only to
+            about 1e-3, so we do not gain anything with double
+            precision.
+        """
+        result = []
+        fmti   = 'L'
+
+        for ar in self.ar:
+            for a in ar:
+                a   = a.T.flatten ()
+                a   = np.array ([a.real, a.imag]).T.flatten ()
+                fmt = byte_order + str (len (a)) + fmtc
+                result.append (struct.pack (fmt, *a))
+        fmt = byte_order + '2' + fmtc
+        result.append (struct.pack (fmt, self.epscf.real, self.epscf.imag))
+        fmt = byte_order + '3' + fmtc
+        for x in (self.dxa, self.dya, self.xsa, self.ysa):
+            result.append (struct.pack (fmt, *x))
+        fmt = byte_order + '3' + fmti
+        for x in (self.nxa, self.nya):
+            result.append (struct.pack (fmt, *x))
+        result = b''.join (result)
+        lp = struct.pack (byte_order + fmti, len (result))
+        with open (fn, 'wb') as f:
+            f.write (lp + result + lp)
+    # end def to_file
+
 # end class Sommerfeld
 
-if __name__ == '__main__':
-    #s = Sommerfeld (4.0, .001, 10.0)
-    #s.compute ()
-    s = Sommerfeld.from_file ('bla')
+def main (argv = sys.argv [1:]):
+    cmd = ArgumentParser (argv)
+    cmd.add_argument \
+        ( '-c', '--complex_epsilon'
+        , help    = 'Complex relative dielectric constant epsilon_r,'
+                    ' already including the imaginary part due to loss;'
+                    ' when specified, epsilon and frequency are ignored'
+        , type    = complex
+        )
+    cmd.add_argument \
+        ( '-e', '--epsilon'
+        , help    = 'Ground relative dielectric constant epsilon_r'
+        , default = 4.0
+        , type    = float
+        )
+    cmd.add_argument \
+        ( '-f', '--frequency'
+        , help    = 'Frequency in MHz'
+        , default = 10.0
+        , type    = float
+        )
+    cmd.add_argument \
+        ( '--float-format'
+        , help    = 'Format for writing float values to binary format'
+        , default = 'f'
+        , choices = ['f', 'd']
+        )
+    cmd.add_argument \
+        ( '-w', '--write-file'
+        , help    = 'Write sommerfeld data to file'
+        )
+    cmd.add_argument \
+        ( '-r', '--read-file'
+        , help    = 'Read sommerfeld data from file'
+        )
+    cmd.add_argument \
+        ( '-s', '--sigma'
+        , help    = 'Ground conductivity in S/m'
+        , default = 0.001
+        , type    = float
+        )
+    args = cmd.parse_args ()
+    if args.read_file:
+        s = Sommerfeld.from_file (args.read_file)
+    elif args.complex_epsilon:
+        s = Sommerfeld (complex_epsilon)
+    else:
+        s = Sommerfeld (args.epsilon, args.sigma, args.frequency)
+    if not args.read_file:
+        s.compute ()
+    if args.write_file:
+        s.to_file (args.write_file, fmtc = args.float_format)
     print (s.as_text ())
+# end def main
+
+if __name__ == '__main__':
+    main (sys.argv [1:])
