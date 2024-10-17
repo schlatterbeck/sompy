@@ -3,6 +3,7 @@
 import sys
 import struct
 import numpy as np
+from operator import mul
 from scipy.special import jv as bessel, hankel1 as hankel
 from rsclib.iter_recipes import batched
 from argparse import ArgumentParser
@@ -111,8 +112,7 @@ class Sommerfeld:
         assert cl - rl == 8
         off = 4
         for n, g in enumerate (som.grids):
-            s   = g [0].shape
-            l   = s [0] * s [1] * 2
+            l   = 2 * mul (*g [0].shape)
             bl  = l * flen
             fmt = byte_order + str (l) + fmtc
             for e in range (4):
@@ -483,6 +483,62 @@ class Sommerfeld:
             all [ibx] = self.gshank (bk [ibx], delb, ans2 [ibx], ibx) [ibx]
         return all
     # end def gshank
+
+    def intrp (self, x, y):
+        """ Evaluate the Sommerfeld integral contributions to the field
+            of a source over ground by interpolation in precomputed
+            tables. For a given x and y the values of I_rho^V, I_z^V,
+            I_rho^H, and I_phi^H are found by bivariate cubic
+            interpolation.
+        """
+        # determine grid
+        if x > self.xsa [1]:
+            idx = 1
+            if y > self.ysa [2]:
+                idx = 2
+        else:
+            idx = 0
+        # In X and Y direction determine 4 points of polynome
+        # We need to make sure that no point is outside the grid
+        ar   = self.ar [idx]
+        dx   = self.dxa [idx]
+        dy   = self.dya [idx]
+        xs   = self.xsa [idx]
+        ys   = self.ysa [idx]
+        nxm2 = self.nxa [idx] - 2
+        nym2 = self.nya [idx] - 2
+        nd   = self.nxa [idx]
+        ixs  = int ((x - xs) / dx) // 3 * 3 + 1
+        iys  = int ((y - ys) / dy) // 3 * 3 + 1
+        ixs  = max (1, ixs)
+        ixs  = min (ixs, nxm2 - 1)
+        iys  = max (1, iys)
+        # Compute coefficients of 4 cubic polynomials in x for the 4
+        # grid values of y for each of the 4 functions
+        pp   = [self.ar [idx][k][ixs-1:ixs+3, iys-1:iys+3] for k in range (4)]
+        a    = [(p [3] - p [0] + 3 * (p [1] - p [2])) * 1/6 for p in pp]
+        b    = [(p [0] - 2 * p [1] + p [2]) * .5 for p in pp]
+        c    = [p [2] - (2 * p [0] + 3 * p [1] + p [3]) * 1/6 for p in pp]
+        d    = [p [1] for p in pp]
+        # Evaluate polynomials in x and then use cubic interpolation in
+        # y for each of the 4 functions
+        xz = ixs * dx + xs
+        yz = iys * dy + ys
+        xx = (x - xz) / dx
+        yy = (y - yz) / dy
+        a = np.array (a)
+        b = np.array (b)
+        c = np.array (c)
+        d = np.array (d)
+        fx = ((a * xx + b) * xx + c) * xx + d
+        p = []
+        p.append (fx.T [3] - fx.T [0] + 3 * (fx.T [1] - fx.T [2]))
+        p.append (3 * (fx.T [0] - 2 * fx.T [1] + fx.T [2]))
+        p.append (6 * fx.T [2] - 2 * fx.T [0] - 3 * fx.T [1] - fx.T [3])
+        p = np.array (p)
+        f = ((p [0] * yy + p [1]) * yy + p [2]) * yy * 1/6 + fx.T [1]
+        return f
+    # end def intrp
 
     def rom1 (self, nx, todo):
         nm    = 1 << 17
