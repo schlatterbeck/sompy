@@ -257,6 +257,8 @@ class Sommerfeld:
         self.ar [2][1] = np.vstack ((a31, self.ar [2][1].T)).T
         self.ar [2][2] = np.vstack ((a32, self.ar [2][2].T)).T
         self.ar [2][3] = np.vstack ((a33, self.ar [2][3].T)).T
+        for k in range (len (self.ar)):
+            self.ar [k] = np.array (self.ar [k])
     # end def compute
 
     def evlua (self):
@@ -515,7 +517,7 @@ class Sommerfeld:
         iys  = max (1, iys)
         # Compute coefficients of 4 cubic polynomials in x for the 4
         # grid values of y for each of the 4 functions
-        pp   = [self.ar [idx][k][ixs-1:ixs+3, iys-1:iys+3] for k in range (4)]
+        pp   = self.ar [idx][..., ixs-1:ixs+3, iys-1:iys+3]
         a    = [(p [3] - p [0] + 3 * (p [1] - p [2])) * 1/6 for p in pp]
         b    = [(p [0] - 2 * p [1] + p [2]) * .5 for p in pp]
         c    = [p [2] - (2 * p [0] + 3 * p [1] + p [3]) * 1/6 for p in pp]
@@ -530,13 +532,13 @@ class Sommerfeld:
         b = np.array (b)
         c = np.array (c)
         d = np.array (d)
-        fx = ((a * xx + b) * xx + c) * xx + d
+        fx = (((a * xx + b) * xx + c) * xx + d).T
         p = []
-        p.append (fx.T [3] - fx.T [0] + 3 * (fx.T [1] - fx.T [2]))
-        p.append (3 * (fx.T [0] - 2 * fx.T [1] + fx.T [2]))
-        p.append (6 * fx.T [2] - 2 * fx.T [0] - 3 * fx.T [1] - fx.T [3])
+        p.append (fx [3] - fx [0] + 3 * (fx [1] - fx [2]))
+        p.append (3 * (fx [0] - 2 * fx [1] + fx [2]))
+        p.append (6 * fx [2] - 2 * fx [0] - 3 * fx [1] - fx [3])
         p = np.array (p)
-        f = ((p [0] * yy + p [1]) * yy + p [2]) * yy * 1/6 + fx.T [1]
+        f = ((p [0] * yy + p [1]) * yy + p [2]) * yy * 1/6 + fx [1]
         return f
     # end def intrp
 
