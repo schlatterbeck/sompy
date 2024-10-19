@@ -5,6 +5,7 @@ import struct
 import numpy as np
 from operator import mul
 from scipy.special import jv as bessel, hankel1 as hankel
+from scipy.interpolate import RegularGridInterpolator
 from rsclib.iter_recipes import batched
 from argparse import ArgumentParser
 
@@ -54,11 +55,14 @@ class Sommerfeld:
         yy    = (ysa, ysa + (nya - 1) * dya, nya)
         xgrid = [np.linspace (*x) for x in zip (*xx)]
         ygrid = [np.linspace (*y) for y in zip (*yy)]
+        # A copy:
+        self.xgrid = xgrid [:]
+        self.ygrid = ygrid [:]
         self.grids = [np.meshgrid (x, y, indexing = 'ij')
                       for x, y in zip (xgrid, ygrid)]
         # avoid computing things twice:
-        xgrid [0] = xgrid [0][1:-1]
-        ygrid [2] = ygrid [2][1:]
+        xgrid [0] = np.array (xgrid [0][1:-1])
+        ygrid [2] = np.array (ygrid [2][1:])
         xygrid = [np.meshgrid (x, y, indexing = 'ij')
                   for x, y in zip (xgrid, ygrid)]
         r     = self.r     = np.concatenate ([x [0].flatten () for x in xygrid])
@@ -257,8 +261,16 @@ class Sommerfeld:
         self.ar [2][1] = np.vstack ((a31, self.ar [2][1].T)).T
         self.ar [2][2] = np.vstack ((a32, self.ar [2][2].T)).T
         self.ar [2][3] = np.vstack ((a33, self.ar [2][3].T)).T
+        self.interpolators = []
         for k in range (len (self.ar)):
             self.ar [k] = np.array (self.ar [k])
+            self.interpolators.append ([])
+            tpl = (self.xgrid [k], self.ygrid [k])
+            for i in range (4):
+                gi = RegularGridInterpolator \
+                    (tpl, self.ar [k][i], method = 'cubic')
+                self.interpolators [k].append (gi)
+        self.interpolators = np.array (self.interpolators)
     # end def compute
 
     def evlua (self):
@@ -486,60 +498,46 @@ class Sommerfeld:
         return all
     # end def gshank
 
-    def intrp (self, x, y):
+    def intrp (self, xy):
         """ Evaluate the Sommerfeld integral contributions to the field
             of a source over ground by interpolation in precomputed
             tables. For a given x and y the values of I_rho^V, I_z^V,
             I_rho^H, and I_phi^H are found by bivariate cubic
             interpolation.
+            The parameter is an np.array of [x, y] values or a single
+            [x,y] value.
         """
-        # determine grid
-        if x > self.xsa [1]:
-            idx = 1
-            if y > self.ysa [2]:
-                idx = 2
-        else:
-            idx = 0
-        # In X and Y direction determine 4 points of polynome
-        # We need to make sure that no point is outside the grid
-        ar   = self.ar [idx]
-        dx   = self.dxa [idx]
-        dy   = self.dya [idx]
-        xs   = self.xsa [idx]
-        ys   = self.ysa [idx]
-        nxm2 = self.nxa [idx] - 2
-        nym2 = self.nya [idx] - 2
-        nd   = self.nxa [idx]
-        ixs  = int ((x - xs) / dx) // 3 * 3 + 1
-        iys  = int ((y - ys) / dy) // 3 * 3 + 1
-        ixs  = max (1, ixs)
-        ixs  = min (ixs, nxm2 - 1)
-        iys  = max (1, iys)
-        # Compute coefficients of 4 cubic polynomials in x for the 4
-        # grid values of y for each of the 4 functions
-        pp   = self.ar [idx][..., ixs-1:ixs+3, iys-1:iys+3]
-        a    = [(p [3] - p [0] + 3 * (p [1] - p [2])) * 1/6 for p in pp]
-        b    = [(p [0] - 2 * p [1] + p [2]) * .5 for p in pp]
-        c    = [p [2] - (2 * p [0] + 3 * p [1] + p [3]) * 1/6 for p in pp]
-        d    = [p [1] for p in pp]
-        # Evaluate polynomials in x and then use cubic interpolation in
-        # y for each of the 4 functions
-        xz = ixs * dx + xs
-        yz = iys * dy + ys
-        xx = (x - xz) / dx
-        yy = (y - yz) / dy
-        a = np.array (a)
-        b = np.array (b)
-        c = np.array (c)
-        d = np.array (d)
-        fx = (((a * xx + b) * xx + c) * xx + d).T
-        p = []
-        p.append (fx [3] - fx [0] + 3 * (fx [1] - fx [2]))
-        p.append (3 * (fx [0] - 2 * fx [1] + fx [2]))
-        p.append (6 * fx [2] - 2 * fx [0] - 3 * fx [1] - fx [3])
-        p = np.array (p)
-        f = ((p [0] * yy + p [1]) * yy + p [2]) * yy * 1/6 + fx [1]
-        return f
+        # determine grids
+        l = xy.shape [0]
+        isscalar = False
+        if len (xy.shape) == 1:
+            l = 1
+            isscalar = True
+            xy = np.array ([xy])
+        idx = np.zeros (l, dtype = int)
+        idx [xy [..., 0] <= self.xsa [1]] = 0
+        idx [(xy [..., 0] > self.xsa [1]) & (xy [..., 1] <= self.ysa [2])] = 1
+        idx [(xy [..., 0] > self.xsa [1]) & (xy [..., 1] >  self.ysa [2])] = 2
+        intpol = self.interpolators [idx, :]
+        r = np.zeros ((l, 4), dtype = complex)
+        if (idx == 0).any ():
+            r [idx == 0, 0] = self.interpolators [0, 0](xy [idx == 0])
+            r [idx == 0, 1] = self.interpolators [0, 1](xy [idx == 0])
+            r [idx == 0, 2] = self.interpolators [0, 2](xy [idx == 0])
+            r [idx == 0, 3] = self.interpolators [0, 3](xy [idx == 0])
+        if (idx == 1).any ():
+            r [idx == 1, 0] = self.interpolators [1, 0](xy [idx == 1])
+            r [idx == 1, 1] = self.interpolators [1, 1](xy [idx == 1])
+            r [idx == 1, 2] = self.interpolators [1, 2](xy [idx == 1])
+            r [idx == 1, 3] = self.interpolators [1, 3](xy [idx == 1])
+        if (idx == 2).any ():
+            r [idx == 2, 0] = self.interpolators [2, 0](xy [idx == 2])
+            r [idx == 2, 1] = self.interpolators [2, 1](xy [idx == 2])
+            r [idx == 2, 2] = self.interpolators [2, 2](xy [idx == 2])
+            r [idx == 2, 3] = self.interpolators [2, 3](xy [idx == 2])
+        if isscalar:
+            return r [0]
+        return r
     # end def intrp
 
     def rom1 (self, nx, todo):
