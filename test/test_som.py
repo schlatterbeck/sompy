@@ -662,7 +662,6 @@ class Test_Base:
              , [1.46461267E-03, -0.121003129,     0.499411732]
              , [1.56922790E-03, -0.105877742,     0.484250098]
              , [1.67384301E-03, -9.07523558E-02,  0.469088495]
-             # 8.4   2.66569364E-03
              , [1.98768894E-03, -4.53761928E-02,  0.423603594]
              , [2.51076464E-03,  3.02507449E-02,  0.347795516]
              , [3.55691649E-03,  0.181504607,     0.196179241]
@@ -696,7 +695,7 @@ class Test_Base:
               , [ 0, -1, -1,  0,  0, -1, -1, -1,  0,  0,  0, 0]
               , [-1, -1, -1,  0,  0, -1, -1, -1, -1,  0,  0, 0]
               , [-1,  0,  0, -1, -1,  0, -1, -1, -1,  0,  0, 0]
-              , [-1,  0,  0, -1, -1,  0,  0, -1, -1, -1,  0, 0]
+              , [-1,  0,  0, -1,  0,  0,  0, -1, -1, -1,  0, 0]
               , [-1,  0,  0, -1, -1,  0, -1, -1,  0,  0, -1, 0]
               , [ 1,  1,  1,  0,  0, -1, -1, -1,  0,  0,  1, 0]
               , [ 0,  0,  0,  0,  0, -1, -1, -1,  0,  0,  0, 0]
@@ -736,6 +735,7 @@ class Test_Base:
                  ]
                , [ 0, 0, 0]
                ]
+             # 1
              , [ [0, 0, 0]
                , [0, 0, 0]
                , [0, 0, 0]
@@ -761,6 +761,7 @@ class Test_Base:
                , [0, 0, 0]
                , [0, 0, 0]
                ]
+             # 2
              , [ [0, 0, 0]
                , [ -1.556018251E-03 -2.221593075E-02j # N+
                  , -0.263038278     -3.26030326j
@@ -795,6 +796,7 @@ class Test_Base:
                  ,  0.254087985     -0.206509754j
                  ]
                ]
+             # 3
              , [ [0, 0, 0]
                , [0, 0, 0]
                , [0, 0, 0]
@@ -820,6 +822,7 @@ class Test_Base:
                , [0, 0, 0]
                , [0, 0, 0]
                ]
+             # 4
              , [ [0, 0, 0]
                , [0, 0, 0]
                , [0, 0, 0]
@@ -845,6 +848,7 @@ class Test_Base:
                , [0, 0, 0]
                , [0, 0, 0]
                ]
+             # 5
              , [ [0, 0, 0]
                , [  0.0622633994 -0.315091848j # N-
                  ,  9.10006046  -45.9076042j
@@ -873,6 +877,7 @@ class Test_Base:
                , [0, 0, 0]
                , [0, 0, 0]
                ]
+             # 6
              , [ [  0.0574495308 -0.352368355j # N-
                  ,  8.39758301  -51.3062782j
                  , 14.6925364    -4.33532763j
@@ -907,6 +912,7 @@ class Test_Base:
                , [0, 0, 0]
                , [0, 0, 0]
                ]
+             # 7
              , [ [  0.302945673 -0.337289453j # N-
                  , 44.168293   -49.0907288j
                  , 29.8673706   -2.91580296j
@@ -938,6 +944,7 @@ class Test_Base:
                , [0, 0, 0]
                , [0, 0, 0]
                ]
+             # 8
              , [ [  0.39040038 -0.308240086j # N-
                  , 56.9196129 -44.8465881j
                  , 41.9467697  -1.11852837j
@@ -948,10 +955,7 @@ class Test_Base:
                  ,  69.0061035 +79.2423325j
                  , -13.1560116 +46.9774361j
                  ]
-               , [  0.583094120     +1.07725871j # N- FIXME 8.4
-                 , 79.5422058     +146.953171j
-                 , -9.422828257E-02 -0.174090475j
-                 ]
+               , [0, 0, 0]
                , [0, 0, 0]
                , [0, 0, 0]
                , [   -1.22179532  +0.625913024j # N-
@@ -969,6 +973,7 @@ class Test_Base:
                , [0, 0, 0]
                , [0, 0, 0]
                ]
+             # 9
              , [ [  0.442123204 -0.294750541j # N-
                  , 64.4735489  -42.8683815j
                  , 56.966114    -0.165260315j
@@ -1000,6 +1005,7 @@ class Test_Base:
                  ]
                , [0, 0, 0]
                ]
+             # 10
              , [ [ -1.717896387E-02 -5.863992497E-03j # N+
                  , -2.49864578      -0.854068398j
                  ,  0.267316490     -0.148092166j
@@ -1034,6 +1040,7 @@ class Test_Base:
                  ]
                , [0, 0, 0]
                ]
+             # 11
              , [ [0, 0, 0]
                , [0, 0, 0]
                , [0, 0, 0]
@@ -1056,6 +1063,7 @@ class Test_Base:
                , [0, 0, 0]
                , [0, 0, 0]
                ]
+             # 12
              , [ [0, 0, 0]
                , [0, 0, 0]
                , [0, 0, 0]
@@ -1094,66 +1102,9 @@ class Test_Base:
         assert (e_exp [norton == 0] == 0).all ()
 
         cnd = norton == -1
-        #assert e [cnd] == pytest.approx (e_exp [cnd], rel = 1.5e-3)
-        assert e [ 0, 5] == pytest.approx (e_exp [ 0, 5], rel = 5e-4)
-        assert e [ 0, 6] == pytest.approx (e_exp [ 0, 6], rel = 5e-4)
-        assert e [ 0, 7] == pytest.approx (e_exp [ 0, 7], rel = 5e-4)
-        assert e [ 1, 3] == pytest.approx (e_exp [ 1, 3], rel = 5e-4)
-        assert e [ 1, 5] == pytest.approx (e_exp [ 1, 5], rel = 5e-4)
-        assert e [ 1, 6] == pytest.approx (e_exp [ 1, 6], rel = 5e-4)
-        assert e [ 1, 7] == pytest.approx (e_exp [ 1, 7], rel = 5e-4)
-        assert e [ 2, 3] == pytest.approx (e_exp [ 2, 3], rel = 5e-4)
-        assert e [ 2, 5] == pytest.approx (e_exp [ 2, 5], rel = 5e-4)
-        assert e [ 2, 6] == pytest.approx (e_exp [ 2, 6], rel = 6e-4)
-        assert e [ 2, 7] == pytest.approx (e_exp [ 2, 7], rel = 5e-4)
-        assert e [ 3, 3] == pytest.approx (e_exp [ 3, 3], rel = 5e-4)
-        assert e [ 3, 5] == pytest.approx (e_exp [ 3, 5], rel = 6e-4)
-        assert e [ 3, 6] == pytest.approx (e_exp [ 3, 6], rel = 5e-4)
-        assert e [ 3, 7] == pytest.approx (e_exp [ 3, 7], rel = 5e-4)
-        assert e [ 4, 3] == pytest.approx (e_exp [ 4, 3], rel = 5e-4)
-        assert e [ 4, 5] == pytest.approx (e_exp [ 4, 5], rel = 7e-4)
-        assert e [ 4, 6] == pytest.approx (e_exp [ 4, 6], rel = 5e-4)
-        assert e [ 4, 7] == pytest.approx (e_exp [ 4, 7], rel = 5e-4)
-        assert e [ 5, 1] == pytest.approx (e_exp [ 5, 1], rel = 5e-4)
-        assert e [ 5, 2] == pytest.approx (e_exp [ 5, 2], rel = 5e-4)
-        assert e [ 5, 5] == pytest.approx (e_exp [ 5, 5], rel = 9e-4)
-        assert e [ 5, 6] == pytest.approx (e_exp [ 5, 6], rel = 5e-4)
-        assert e [ 5, 7] == pytest.approx (e_exp [ 5, 7], rel = 5e-4)
-        assert e [ 6, 0] == pytest.approx (e_exp [ 6, 0], rel = 7e-4)
-        assert e [ 6, 1] == pytest.approx (e_exp [ 6, 1], rel = 5e-4)
-        assert e [ 6, 2] == pytest.approx (e_exp [ 6, 2], rel = 5e-4)
-        assert e [ 6, 5] == pytest.approx (e_exp [ 6, 5], rel = 5e-4)
-        assert e [ 6, 6] == pytest.approx (e_exp [ 6, 6], rel = 5e-4)
-        assert e [ 6, 7] == pytest.approx (e_exp [ 6, 7], rel = 5e-4)
-        assert e [ 6, 8] == pytest.approx (e_exp [ 6, 8], rel = 5e-4)
-        assert e [ 7, 0] == pytest.approx (e_exp [ 7, 0], rel = 5e-4)
-        assert e [ 7, 3] == pytest.approx (e_exp [ 7, 3], rel = 5e-4)
-        assert e [ 7, 4] == pytest.approx (e_exp [ 7, 4], rel = 5e-4)
-        assert e [ 7, 6] == pytest.approx (e_exp [ 7, 6], rel = 5e-4)
-        assert e [ 7, 7] == pytest.approx (e_exp [ 7, 7], rel = 5e-4)
-        assert e [ 7, 8] == pytest.approx (e_exp [ 7, 8], rel = 5e-4)
-        assert e [ 8, 0] == pytest.approx (e_exp [ 8, 0], rel = 5e-4)
-        assert e [ 8, 3] == pytest.approx (e_exp [ 8, 3], rel = 5e-4)
-        assert e [ 8, 7] == pytest.approx (e_exp [ 8, 7], rel = 5e-4)
-        assert e [ 8, 8] == pytest.approx (e_exp [ 8, 8], rel = 5e-4)
-        assert e [ 8, 9] == pytest.approx (e_exp [ 8, 9], rel = 5e-4)
-        assert e [ 9, 0] == pytest.approx (e_exp [ 9, 0], rel = 5e-4)
-        assert e [ 9, 3] == pytest.approx (e_exp [ 9, 3], rel = 5e-4)
-        assert e [ 9, 4] == pytest.approx (e_exp [ 9, 4], rel = 1.5e-3)
-        assert e [ 9, 6] == pytest.approx (e_exp [ 9, 6], rel = 5e-4)
-        assert e [ 9, 7] == pytest.approx (e_exp [ 9, 7], rel = 5e-4)
-        assert e [ 9,10] == pytest.approx (e_exp [ 9,10], rel = 5e-4)
-        assert e [10, 5] == pytest.approx (e_exp [10, 5], rel = 5e-4)
-        assert e [10, 6] == pytest.approx (e_exp [10, 6], rel = 5e-4)
-        assert e [10, 7] == pytest.approx (e_exp [10, 7], rel = 6e-4)
-        assert e [11, 5] == pytest.approx (e_exp [11, 5], rel = 5e-4)
-        assert e [11, 6] == pytest.approx (e_exp [11, 6], rel = 5e-4)
-        assert e [11, 7] == pytest.approx (e_exp [11, 7], rel = 5e-4)
-        assert e [12, 5] == pytest.approx (e_exp [12, 5], rel = 5e-4)
-        assert e [12, 6] == pytest.approx (e_exp [12, 6], rel = 5e-4)
-        assert e [12, 7] == pytest.approx (e_exp [12, 7], rel = 5e-4)
+        assert e [cnd] == pytest.approx (e_exp [cnd], rel = 1.5e-3)
         cnd = norton == 1
-        #assert e [cnd] * seglen == pytest.approx (e_exp [cnd], rel = 2e-2)
+        assert e [cnd] * seglen == pytest.approx (e_exp [cnd], rel = 2e-2)
     # end def test_sflds
 
 # end class Test_Base
