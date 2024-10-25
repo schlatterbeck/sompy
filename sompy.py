@@ -27,6 +27,19 @@ class Sommerfeld:
             We make sigma optional and allow eps_r to be complex.
             Note: The original implementation in somnec uses 59.96 as an
             approximation of mu0 * c / (2*pi)
+            In fortran there is a common segment /gnd/ which contains
+            the variables frati and zrati:
+             - frati: (k_1**2 - k_2**2) / (k_1**2 + k_2**2) where
+               k2 = ω * sqrt(μ_0 ε_0)
+               k1 = k2 / zrati
+             - zrati: [ε_r - j σ/ωε_0] ** -(1/2)
+               where σ is ground conductivity (mhos/meter),
+               ε_0 is the permittivity of free space (farads/meter),
+               and ω = 2π f
+             The code, however computes directly (which is equivalent):
+             FRATI=( EPSC-1.)/( EPSC+1.)
+             where EPSC is our epscf.  We compute these as member
+             variables, too (using the simplified formula from the code).
         """
         self.eps_r = eps_r
         self.sigma = sigma
@@ -38,6 +51,8 @@ class Sommerfeld:
             self.epscf = eps_r -1j * sigma / (2 * np.pi * f * eps0)
         else:
             self.epscf = eps_r
+        self.zrati = 1 / np.sqrt (self.epscf)
+        self.frati = (self.epscf - 1) / (self.epscf + 1)
         # In the fortran implementation the common block cgrid contains
         # the three arrays ar1, ar2, and ar2 with the values. We compute
         # the xyz input values here replacing DXA, DYA (the increment
@@ -200,6 +215,7 @@ class Sommerfeld:
     def compute (self):
         erv, ezv, erh, eph = self.evlua ()
         rk  = 2 * np.pi * self.r
+        # FIXME: magic constant
         con = - (0 +4.77147j) * self.r / (np.cos (rk) -1j * np.sin (rk))
         erv = erv * con
         ezv = ezv * con
@@ -272,6 +288,20 @@ class Sommerfeld:
                 self.interpolators [k].append (gi)
         self.interpolators = np.array (self.interpolators)
     # end def compute
+
+    def compute_incom (self, dir):
+        """ Compute values that used to be in fortran common segment /incom/
+            This returns sn, xsn, ysn
+        """
+        sn  = np.linalg.norm (dir [..., :2], axis = 1)
+        sn [sn < 1e-5] = 0
+        xsn = np.ones  (sn.shape)
+        ysn = np.zeros (sn.shape)
+        cnd = sn != 0
+        xsn [cnd] = dir [..., 0][cnd] / sn [cnd]
+        ysn [cnd] = dir [..., 1][cnd] / sn [cnd]
+        return sn, xsn, ysn
+    # end def compute_incom
 
     def evlua (self):
         """ Controls the integration contour in the complex lambda plane for
@@ -367,6 +397,61 @@ class Sommerfeld:
                 (cp3, delta, all, cnd8, bk, delta2) [cnd8]
         return ans
     # end def evlua_hankel
+
+    def fbar (self, p):
+        """ Sommerfeld attenuation function for Norton's asymptotic
+            field approximation for numerical distance p
+            accs: relative convergence test value (1e-12)
+            sp: sqrt(pi)
+            tosp 2 / sqrt (pi)
+            fj: 1j
+        """
+        z    = np.sqrt (p + 0j) * 1j
+        fbar = np.zeros (z.shape, dtype = complex)
+        cond = np.abs (z) > 3
+        fbar [cond] = self.fbar_asymptotic (z [cond])
+        cond = np.logical_not (cond)
+        fbar [cond] = self.fbar_series (z [cond])
+        return fbar
+    # end def fbar
+
+    def fbar_asymptotic (self, z):
+        minus = z.real < 0
+        z [minus] = -z [minus]
+        zs    = .5 / (z * z)
+        res   = np.zeros (z.shape, dtype = complex)
+        term  = np.ones  (z.shape, dtype = complex)
+        sp    = np.sqrt (np.pi)
+        for i in range (6):
+            term = -term * (2 * (i + 1) - 1) * zs
+            res  = res + term
+            res [minus] = \
+                ( res [minus]
+                - 2 * sp * z [minus] * np.exp (z [minus] * z [minus])
+                )
+        return -res
+    # end def fbar_asymptotic
+
+    def fbar_series (self, z):
+        zs   = z * z
+        res  = z
+        pow  = z
+        term = np.zeros (z.shape, dtype = complex)
+        tms  = np.zeros (z.shape, dtype = complex)
+        sms  = np.zeros (z.shape, dtype = complex)
+        cnd  = np.ones  (z.shape, dtype = bool)
+        for i in range (100):
+            pow  [cnd] = -pow [cnd] * zs [cnd] / (i + 1)
+            term [cnd] = pow [cnd] / (2 * (i + 1) + 1)
+            res  [cnd] = res [cnd] + term [cnd]
+            tms  [cnd] = (term [cnd] * np.conjugate (term [cnd])).real
+            sms  [cnd] = (res  [cnd] * np.conjugate (res  [cnd])).real
+            cnd [tms / sms < 1e-12] = False
+            if not cnd.any ():
+                break
+        sp = np.sqrt (np.pi)
+        return 1 - (1 - res * (2 / sp)) * z * np.exp (zs) * sp
+    # end def fbar_series
 
     def gshank (self, start, dela, seed, cond, bk = None, delb = None):
         """ Integrates the 6 Sommerfeld integrals from start to infinity
@@ -497,6 +582,94 @@ class Sommerfeld:
             all [ibx] = self.gshank (bk [ibx], delb, ans2 [ibx], ibx) [ibx]
         return all
     # end def gshank
+
+    def gwave (self, xx1, xx2, r1, r2, zmh, zph):
+        """ Compute the electric field, including ground wave, of a
+            current element over a ground plane at intermediate
+            distances, including the surface wave field.
+            Using formulas of K. A. Norton
+            (Proc. IRE, Sept., 1937, pp. 1203-1236)
+            fortran commons:
+            u, u2, xx1, xx2, r1, r2, zmh, zph are common /gwav/
+            - common /gwav/:
+              - u: (ε_r - j σ/ωε_0) ** -(1/2) [zrati]
+              - u2: u**2
+              - xx1, xx2: defined in gfld and sflds
+              - r1: distance from current element to point at which field
+                is evaluated
+              - r2: distance from image of current element to point at
+                which field is evaluated
+              - zmh: Z - Z'
+              - zph: Z + Z' where Z is height of the field evaluation
+                point and Z' is the height of the current element
+            fj = 1j, fjx = [fj.real, fj.imag]
+            tpj = 2j * np.pi, tpjx = [tpj.real, tpj.imag]
+        """
+        econ  = 0 -188.367j
+        u2    = self.zrati * self.zrati
+        sppp  = zmh / r1
+        sppp2 = sppp * sppp
+        cppp2 = 1 - sppp2
+        cppp2 [cppp2 < 1e-20] = 1e-20
+        cppp  = np.sqrt (cppp2)
+        spp   = zph / r2
+        spp2  = spp * spp
+        cpp2  = 1 - spp2
+        cpp2 [cpp2 < 1e-20] = 1e-20
+        cpp  = np.sqrt (cpp2)
+        rk1  = -2j * np.pi * r1
+        rk2  = -2j * np.pi * r2
+        t1   = 1 - u2 * cpp2
+        t2   = np.sqrt (t1)
+        t3   = (1 - 1 / rk1) / rk1
+        t4   = (1 - 1 / rk2) / rk2
+        p1   = rk2 * u2 * t1 / (2 * cpp2)
+        rv   = (spp - self.zrati * t2) / (spp + self.zrati * t2)
+        omr  = 1 - rv
+        w    = 1 / omr
+        w    = (4 + 0j) * p1 * w * w
+        f    = self.fbar (w)
+        q1   = rk2 * t1 / (2 * u2 * cpp2)
+        rh   = (t2 - self.zrati * spp) / (t2 + self.zrati * spp)
+        v    = 1 / (1 + rh)
+        v    = (4 +0j) * q1 * v * v
+        g    = self.fbar (v)
+        xr1  = xx1 / r1
+        xr2  = xx2 / r2
+        x1   = cppp2 * xr1
+        x2   = rv * cpp2 * xr2
+        x3   = omr * cpp2 * f * xr2
+        x4   = self.zrati * t2 * spp * 2 * xr2 / rk2
+        x5   = xr1 * t3 * (1 - 3 * sppp2)
+        x6   = xr2 * t4 * (1 - 3 * spp2)
+        ezv  = (x1 + x2 + x3 - x4 - x5 - x6) * econ
+        x1   = sppp * cppp * xr1
+        x2   = rv * spp * cpp * xr2
+        x3   = cpp * omr * self.zrati * t2 * f * xr2
+        x4   = spp * cpp * omr * xr2 / rk2
+        x5   = 3 * sppp * cppp * t3 * xr1
+        x6   = cpp * self.zrati * t2 * omr * xr2 / rk2 * .5
+        x7   = 3 * spp * cpp * t4 * xr2
+        erv  = -(x1 + x2 - x3 + x4 - x5 + x6 - x7) * econ
+        ezh  = -(x1 - x2 + x3 - x4 - x5 - x6 + x7) * econ
+        x1   = sppp2 * xr1
+        x2   = rv * spp2 * xr2
+        x4   = u2 * t1 * omr * f * xr2
+        x5   = t3 * (1 - 3 * cppp2) * xr1
+        x6   = t4 * (1 - 3 * cpp2) * (1 - u2 * (1 + rv) - u2 * omr * f) * xr2
+        x7   = u2 * cpp2 * omr * (1 - 1 / rk2) \
+             * (f * (u2 * t1 - spp2 - 1 / rk2) + 1 / rk2) * xr2
+        erh  = (x1 - x2 - x4 - x5 + x6 + x7) * econ
+        x1   = xr1
+        x2   = rh * xr2
+        x3   = (rh + 1) * g * xr2
+        x4   = t3 * xr1
+        x5   = t4 * (1 - u2 * (1 + rv) - u2 * omr * f) * xr2
+        x6   = .5 * u2 * omr \
+             * (f * (u2 * t1 - spp2 - 1 / rk2) + 1 / rk2) * xr2 / rk2
+        eph  = -(x1 - x2 + x3 - x4 + x5 + x6) * econ
+        return np.array ([erv, ezv, erh, ezh, eph])
+    # end def gwave
 
     def intrp (self, xy):
         """ Evaluate the Sommerfeld integral contributions to the field
@@ -756,6 +929,153 @@ class Sommerfeld:
         cgam2 [cond] = -cgam2 [cond]
         return b0, b0p, cgam1, cgam2
     # end def saoa_hankel
+
+    def sflds (self, p, dir, t, obs, current = 1.0):
+        """ Evaluate the Sommerfeld-integral field components due to an
+            infinitesimal current element on a segment.
+            Compute the  field due to ground for a current element on
+            the source segment at t relative to the segment center.
+
+            The current source element has a position at px (in fortran
+            this used to be xj, yj, zj), a unit direction vector dir (in
+            fortran this was cabj, sabj, salpj) and an optional current
+            (which by default is 1). The position is shifted by t into
+            the direction of the direction vector.
+            The observation point obs (in fortran this was xo, yo, zo)
+            is the point at which the E-field is computed.
+
+            In the fortran version:
+            - s, xj, yj, zj, cabj, sabj, salpj are common /dataj/
+            - xo, yo, zo, sn, xsn, ysn, isnor are common /incom/
+            - outputs xx1, xx2, r1, r2, zmh, zph are common /gwav/
+            - frati is from common /gnd/
+            The fortran version used to return the field value
+            multiplied by the segment length when using the Norton
+            approximation. For the Non-Norton case it returned the field
+            value and the caller integrated over the segment length.
+            We do not multiply by the segment length inside sflds
+
+            Docs on common segments:
+            - /dataj/ is used to pass the parameters of the source segment
+              or patch to the routines tht compute the E or H field and
+              to return the field components.
+              - s: segment length
+              - xj, yj, zj: coordinates of segment center
+              - cabj, sabj, salpj: x, y, z, respectively, of the unit
+                vector in the direction of the segment
+            - /gnd/ contains parameters of the ground including the
+              two-medium ground and radial-wire ground-screen cases.
+              - frati: (k_1**2 - k_2**2) / (k_1**2 + k_2**2) where
+                k2 = ω * sqrt(μ_0 ε_0)
+                k1 = k2 / zrati
+              - zrati: [ε_r - j σ/ωε_0] ** -(1/2)
+                where σ is ground conductivity (mhos/meter),
+                ε_0 is the permittivity of free space (farads/meter),
+                and ω = 2π f
+            - /gwav/
+              - xx1, xx2: defined in gfld and sflds
+              - r1: distance from current element to point at which field
+                is evaluated
+              - r2: distance from image of current element to point at
+                which field is evaluated
+              - zmh: Z - Z'
+              - zph: Z + Z' where Z is height of the field evaluation
+                point and Z' is the height of the current element
+            - /incom/
+              - xo, yo, zo: point at which field due to ground will be
+                evaluated
+              - sn: cos \alpha (see figure 11)
+                alpha is angle from x-y plane upwards
+              - xsn: cos \beta
+                beta is angle from x-axis to y-axis
+              - ysn: sin \beta
+              - isnor: 1 to evaluate field due to ground by
+                interpolation, 0 to use Norton's approximation
+                [wtf: would expect it the other way round]
+                This seems to be wrong, too, the fortran code sets isnor
+                to 1 or 2 (not zero).
+                Note that in the python implementation we just use the
+                boolean isnor to determine if we use the Norton
+                approximation.
+        """
+        px    = p + dir * t
+        sn, xsn, ysn = self.compute_incom (dir)
+        rhx   = obs [None, ..., 0] - px [..., None, 0]
+        rhy   = obs [None, ..., 1] - px [..., None, 1]
+        rhs   = rhx * rhx + rhy * rhy
+        rho   = np.sqrt (rhs)
+        cnd   = rho <= 0
+        rhx [cnd] = 1.
+        rhy [cnd] = 0.
+        cnd   = rho > 0
+        rhx [cnd] = rhx [cnd] / rho [cnd]
+        rhy [cnd] = rhy [cnd] / rho [cnd]
+        phx   = -rhy
+        phy   = rhx
+        cph   = rhx * xsn [..., None] + rhy * ysn [..., None]
+        sph   = rhy * xsn [..., None] - rhx * ysn [..., None]
+        cnd   = np.abs (cph) < 1e-10
+        cph [cnd] = 0
+        cnd   = np.abs (sph) < 1e-10
+        cph [cnd] = 0
+        zph   = obs [None, ..., 2] + p [..., None, 2]
+        zphs  = zph * zph
+        r2s   = rhs + zphs
+        r2    = np.sqrt (r2s)
+        isnor = r2 > .95
+        rk    = r2 * 2 * np.pi
+        xx2   = np.cos (rk) -1j * np.sin (rk)
+        e     = np.zeros (isnor.shape + (3,), dtype = complex)
+        # Use Norton approximation for field due to ground. Current is
+        # lumped at segment center with current moment for constant,
+        # sine, or cosine distribution.
+        r1    = np.ones  (isnor.shape) [isnor]
+        xx1   = np.zeros (isnor.shape) [isnor]
+        gwv   = self.gwave (xx1, xx2 [isnor], r1, r2 [isnor], r1, zph [isnor])
+        erv, ezv, erh, ezh, eph = gwv
+        # FIXME: magic constant
+        magic = -4.77134j
+        et    = magic * self.frati * xx2 [isnor] / (r2s [isnor] * r2 [isnor])
+        er    = 2 * et * (1 + 1j * rk [isnor])
+        et    = et * (1 - (rk [isnor] * rk [isnor]) + 1j * rk [isnor])
+        hrv   = (er + et) * rho [isnor] * zph [isnor] / r2s [isnor]
+        hzv   = (zphs [isnor] * er - rhs [isnor] * et) / r2s [isnor]
+        hrh   = (rhs [isnor] * er - zphs [isnor] * et) / r2s [isnor]
+        erv   = erv - hrv
+        ezv   = ezv - hzv
+        erh   = erh + hrh
+        ezh   = ezh + hrv
+        eph   = eph + et
+        ddd   = dir [..., 2, None] * isnor
+        erv   = erv * ddd [isnor]
+        ezv   = ezv * ddd [isnor]
+        tmp   = (sn [..., None] * isnor) [isnor]
+        erh   = erh * tmp * cph [isnor]
+        ezh   = ezh * tmp * cph [isnor]
+        eph   = eph * tmp * sph [isnor]
+        erh   = erv + erh
+        e [..., 0][isnor] = (erh * rhx [isnor] + eph * phx [isnor])
+        e [..., 1][isnor] = (erh * rhy [isnor] + eph * phy [isnor])
+        e [..., 2][isnor] = (ezv + ezh)
+        # Interpolation in Sommerfeld field tables
+        nisnor = np.logical_not (isnor)
+        thet   = np.ones (zph [nisnor].shape) * np.pi / 2
+        cnd    = rho [nisnor] >= 1e-12
+        thet [cnd] = np.arctan (zph [nisnor][cnd] / rho [nisnor][cnd])
+        # Combine vertical and horizontal components and convert to
+        # x,y,z components. Multiply by exp(-jkr)/r.
+        erv, ezv, erh, eph = self.intrp (np.array ([r2 [nisnor], thet]).T).T
+        xx2  = xx2 [nisnor] / r2 [nisnor]
+        sfac = (sn [..., None] * nisnor)[nisnor] * cph [nisnor]
+        erh  = xx2 * ((dir [..., 2, None] * nisnor)[nisnor] * erv + sfac * erh)
+        ezh  = xx2 * ((dir [..., 2, None] * nisnor)[nisnor] * ezv - sfac * erv)
+        # x,y,z fields for constant current
+        eph  = (sn [..., None] * nisnor) [nisnor] * sph [nisnor] * xx2 * eph
+        e [..., 0][nisnor] = erh * rhx [nisnor] + eph * phx [nisnor]
+        e [..., 1][nisnor] = erh * rhy [nisnor] + eph * phy [nisnor]
+        e [..., 2][nisnor] = ezh
+        return e
+    # end def sflds
 
     def test (self, f1, f2, dmin):
         den = np.abs (f2.real)
