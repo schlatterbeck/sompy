@@ -46,25 +46,43 @@ The code is licensed under the MIT license, see ``LICENSE`` file.
 .. figure:: https://raw.githubusercontent.com/schlatterbeck/sompy/master/plot.png
     :align: center
 
+Some notes about timing: The SOMNEC code originally took a long time to
+compute a grid with some 200 points. One of the reasons is that numeric
+integration is performed with an increasing number of points. Even back
+in the 1990's the computation took 257 seconds on a DEC VAX 8600 and 100
+seconds on a Silicon Graphics 4D/440 workstation (this is from an old
+`SOMNEC readme`_ file). The implementation in Python takes about a
+second. But the Fortran code today |--| we have floating point units in
+every CPU |--| takes only about 20ms. So the Python code is *a lot
+slower* even though using full vectorization in numpy_. But now that
+there is a Python implementation, experiments with different integration
+methods might prove faster than the current variant of Romberg
+integrals [Mil70]_.
+
 Bibliography
 ------------
 
 .. [Som09] A. Sommerfeld. Über die Ausbreitung der Wellen in der
-       drahtlosen Telegraphie. Annalen der Physik, 28(4):665–736, 1909.
+    drahtlosen Telegraphie. Annalen der Physik, 28(4):665–736, 1909.
 .. [Nor37] K. A. Norton. The propagation of radio waves over the surface
-       of the earth and in the upper atmosphere, part II: The
-       propagation from vertical, horizontal, and loop antennas over a
-       plane earth of finite conductivity. Proceedings of the Institute
-       of Radio Engineers, 25(9):1203–1236, September 1937.
+    of the earth and in the upper atmosphere, part II: The propagation
+    from vertical, horizontal, and loop antennas over a plane earth of
+    finite conductivity. Proceedings of the Institute of Radio
+    Engineers, 25(9):1203–1236, September 1937.
 .. [BP81] G. J. Burke and A. J. Poggio. Numerical electromagnetics code
-       (NEC) – method of moments, part I-III, January 1981. All three
-       parts available as `ADA956129`_
+    (NEC) – method of moments, part I-III, January 1981. All three parts
+    available as `ADA956129`_
 .. [Kyr] Neoklis Kyriazis: `NEC2 in C`_
-.. [Mol.a] T. Molteno: `NEC2++ Numerical Electromagnetic Code in C++`_
-.. [Mol.b] T. Molteno: `Python NEC2++ Module`_
+.. [Mol.a] Tim Molteno: `NEC2++ Numerical Electromagnetic Code in C++`_
+.. [Mol.b] Tim Molteno: `Python NEC2++ Module`_
+.. [Mil70] Edmund K. Miller. A variable interval width quadrature
+    technique based on Romberg’s method. Journal of Computational
+    Physics, 5(2):265–279, April 1970.
 
 .. _`ADA956129`: https://apps.dtic.mil/sti/tr/pdf/ADA956129.pdf
 .. _`NEC2++ Numerical Electromagnetic Code in C++`:
     https://github.com/tmolteno/necpp
 .. _`Python NEC2++ Module`: https://pypi.org/project/PyNEC/
 .. _`NEC2 in C`: https://github.com/KJ7LNW/nec2c
+.. _`SOMNEC readme`: https://www.funet.fi/pub/ham/antenna/NEC/somnec_readme.txt
+.. _numpy: https://numpy.org/
