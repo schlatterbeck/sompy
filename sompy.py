@@ -12,7 +12,10 @@ from argparse import ArgumentParser
 # Constants
 c    = 299.8
 mu0  = 4e-7 * np.pi
+mu0  = 1.25663706127e-6
 eps0 = 1e-12 / (c**2 * mu0)
+#eps0 = 8.8541878188e-12
+eta  = np.sqrt (mu0 / eps0)
 
 class Sommerfeld:
 
@@ -215,7 +218,7 @@ class Sommerfeld:
     def compute (self):
         erv, ezv, erh, eph = self.evlua ()
         rk  = 2 * np.pi * self.r
-        # FIXME: magic constant
+        # FIXME: magic constant, eta / (8*pi**2)?
         con = - (0 +4.77147j) * self.r / (np.cos (rk) -1j * np.sin (rk))
         erv = erv * con
         ezv = ezv * con
@@ -289,19 +292,111 @@ class Sommerfeld:
         self.interpolators = np.array (self.interpolators)
     # end def compute
 
-    def compute_incom (self, dir):
+    def compute_incom (self, dirvec):
         """ Compute values that used to be in fortran common segment /incom/
             This returns sn, xsn, ysn
         """
-        sn  = np.linalg.norm (dir [..., :2], axis = 1)
+        sn  = np.linalg.norm (dirvec [..., :2], axis = 1)
         sn [sn < 1e-5] = 0
         xsn = np.ones  (sn.shape)
         ysn = np.zeros (sn.shape)
         cnd = sn != 0
-        xsn [cnd] = dir [..., 0][cnd] / sn [cnd]
-        ysn [cnd] = dir [..., 1][cnd] / sn [cnd]
+        xsn [cnd] = dirvec [..., 0][cnd] / sn [cnd]
+        ysn [cnd] = dirvec [..., 1][cnd] / sn [cnd]
         return sn, xsn, ysn
     # end def compute_incom
+
+    def direct_field (self, p, dirvec, obs):
+        """ E-field at a point -- not integrated over a segment
+            p is the source point, obs is the observation point
+            dirvec is the direction vector of the infinitesimal source
+            This incorporates the logic in the thin wire kernel in EKSC.
+        """
+        dist  = obs [None, ...] - p [:, None, ...]
+        zp    = np.zeros (dist.shape [:-1])
+        for k in range (dist.shape [0]):
+            zp [k] = dist [k].dot (dirvec [k])
+        rho   = dist - dirvec [:, None, ...] * zp [..., None]
+        rh    = np.linalg.norm (rho, axis = -1)
+        cnd   = rh > 1e-10
+        rho [cnd] = rho [cnd] / rh [cnd, None]
+        cnd   = np.logical_not (cnd)
+        rho  [cnd] = 0
+        r     = np.sqrt (zp * zp + rh * rh)
+        # Here we would use the lumped current approximation for r > 1
+        # see below
+        tezk = self.eksc (zp, rh)
+        terk = np.zeros (tezk.shape)
+        # This is the lumped current element approximation for large r
+        # We instead *always* use the exact version because we do not
+        # need to integrate.
+        if 0:
+            rmag  = 2 * np.pi * r
+            cth   = zp / r
+            px    = rh / r
+            txk   = np.exp (-1j * rmag)
+            py    = 2 * np.pi * r * r
+            tyk   = eta * cth * txk * (-1j / rmag + 1) / py
+            tzk   = eta * px  * txk * (1j * rmag - 1j / rmag + 1) / 2 * py
+            tezk  = tyk * cth - tzk * px
+            terk  = tyk * px + tzk * cth
+        tk    = tezk [..., None] * dirvec [:, None, :] \
+              + terk [..., None] * rho
+        # Finally compute projection of field onto observation segment
+        # See line ww77 in function CMWW, original comment:
+        # Electric field tangent to segment I is computed
+        # etk = exk * cabi + eyk * sabi + ezk * salpi
+        return tk
+    # end def direct_field
+
+    def efld (self, p, dirvec, obs):
+        """ This computes the sum of three components, the direct field,
+            the reflected field, and the Sommerfeld contribution. The
+            vector dist from p to obs is (xij, yij, zij) in fortran.
+        """
+        field = None
+        for refl in (1, -1):
+            kvec = np.array ([1, 1, refl])
+            fld  = self.direct_field (p * kvec, dirvec, obs)
+            if refl > 0:
+                field = fld
+            else:
+                field = field - fld * self.frati
+        field = field + self.sflds (p, dirvec, obs)
+        return field
+    # end def efld
+
+    def eksc (self, z, rh):
+        """ This is more or less the original in the fortran code but
+            without taking the segment length into account. We also do
+            not compute a contribution of segment ends -- our
+            infinitesimal dipole doesn't have a radius.
+            So the contribution of the field in rho-direction is zero,
+            we return only the ezk component.
+            We also do not integrate over the segment length (performed
+            by INTX in fortran).
+            z: z coordinate of field point
+            rh: rho coordinate of field point
+            # not passed as arguments:
+            xk: 2 pi / lambda where lambda = 1
+            ij: indicates if field point is on source segment, not
+                needed here
+        """
+        con  = 1j * eta / (8 * np.pi ** 2)
+        xk   = 2 * np.pi
+        zpk  = xk * z
+        rhk  = xk * rh
+        rkb2 = rhk * rhk
+        # this is done by routine GX for z1 and z2 originally
+        # where z1 and z2 are the segment ends, then gz below is
+        # integrated from z1 to z2.
+        r2   = z * z + rh * rh
+        r    = np.sqrt (r2)
+        rkz  = xk * r
+        gz   = np.exp (-1j * rkz) / r
+        ezk  = con * xk * xk * gz
+        return ezk
+    # end def eksc
 
     def evlua (self):
         """ Controls the integration contour in the complex lambda plane for
@@ -930,17 +1025,17 @@ class Sommerfeld:
         return b0, b0p, cgam1, cgam2
     # end def saoa_hankel
 
-    def sflds (self, p, dir, t, obs, current = 1.0):
+    def sflds (self, px, dirvec, obs, current = 1.0):
         """ Evaluate the Sommerfeld-integral field components due to an
             infinitesimal current element on a segment.
-            Compute the  field due to ground for a current element on
-            the source segment at t relative to the segment center.
+            Compute the  field due to ground for a current element at
+            px with direction dirvec.
 
             The current source element has a position at px (in fortran
-            this used to be xj, yj, zj), a unit direction vector dir (in
-            fortran this was cabj, sabj, salpj) and an optional current
-            (which by default is 1). The position is shifted by t into
-            the direction of the direction vector.
+            this used to be xj, yj, zj), a unit direction vector dirvec
+            (in fortran this was cabj, sabj, salpj) and an optional
+            current (which by default is 1). The position is shifted by
+            t into the direction of the direction vector.
             The observation point obs (in fortran this was xo, yo, zo)
             is the point at which the E-field is computed.
 
@@ -998,8 +1093,7 @@ class Sommerfeld:
                 boolean isnor to determine if we use the Norton
                 approximation.
         """
-        px    = p + dir * t
-        sn, xsn, ysn = self.compute_incom (dir)
+        sn, xsn, ysn = self.compute_incom (dirvec)
         rhx   = obs [None, ..., 0] - px [..., None, 0]
         rhy   = obs [None, ..., 1] - px [..., None, 1]
         rhs   = rhx * rhx + rhy * rhy
@@ -1018,7 +1112,7 @@ class Sommerfeld:
         cph [cnd] = 0
         cnd   = np.abs (sph) < 1e-10
         cph [cnd] = 0
-        zph   = obs [None, ..., 2] + p [..., None, 2]
+        zph   = obs [None, ..., 2] + px [..., None, 2]
         zphs  = zph * zph
         r2s   = rhs + zphs
         r2    = np.sqrt (r2s)
@@ -1034,6 +1128,10 @@ class Sommerfeld:
         gwv   = self.gwave (xx1, xx2 [isnor], r1, r2 [isnor], r1, zph [isnor])
         erv, ezv, erh, ezh, eph = gwv
         # FIXME: magic constant
+        # p 101 in nec2prt2 tells us 4.771341189 = eta/(8 pi**2)
+        # it is really 4.771345158604122
+        # But fails too many tests if we change this
+        #magic = eta / (8 * np.pi ** 2)
         magic = -4.77134j
         et    = magic * self.frati * xx2 [isnor] / (r2s [isnor] * r2 [isnor])
         er    = 2 * et * (1 + 1j * rk [isnor])
@@ -1046,7 +1144,7 @@ class Sommerfeld:
         erh   = erh + hrh
         ezh   = ezh + hrv
         eph   = eph + et
-        ddd   = dir [..., 2, None] * isnor
+        ddd   = dirvec [..., 2, None] * isnor
         erv   = erv * ddd [isnor]
         ezv   = ezv * ddd [isnor]
         tmp   = (sn [..., None] * isnor) [isnor]
@@ -1067,8 +1165,10 @@ class Sommerfeld:
         erv, ezv, erh, eph = self.intrp (np.array ([r2 [nisnor], thet]).T).T
         xx2  = xx2 [nisnor] / r2 [nisnor]
         sfac = (sn [..., None] * nisnor)[nisnor] * cph [nisnor]
-        erh  = xx2 * ((dir [..., 2, None] * nisnor)[nisnor] * erv + sfac * erh)
-        ezh  = xx2 * ((dir [..., 2, None] * nisnor)[nisnor] * ezv - sfac * erv)
+        erh  = xx2 \
+             * ((dirvec [..., 2, None] * nisnor)[nisnor] * erv + sfac * erh)
+        ezh  = xx2 \
+             * ((dirvec [..., 2, None] * nisnor)[nisnor] * ezv - sfac * erv)
         # x,y,z fields for constant current
         eph  = (sn [..., None] * nisnor) [nisnor] * sph [nisnor] * xx2 * eph
         e [..., 0][nisnor] = erh * rhx [nisnor] + eph * phx [nisnor]

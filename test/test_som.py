@@ -685,6 +685,9 @@ class Test_Base:
              , [6.81992737E-04, -0.242006585,     0.620704710]
              , [9.91850393E-04, -0.181504294,     0.560058296]
             ])
+        dirvec = [[4.88481205E-03, 0.706251740, -0.707943916]] * len (p)
+        dirvec = np.array (dirvec)
+
         # 1: norton approx. -1: no norton approx 0: not computed in fortran
         norton = np.array \
             ( [ [ 1,  1,  0,  0,  0, -1, -1, -1,  0,  0,  1, 0]
@@ -1088,11 +1091,9 @@ class Test_Base:
                ]
             ])
         norton = np.reshape (np.repeat (norton, 3), e_exp.shape)
-        dir = [[4.88481205E-03, 0.706251740, -0.707943916]] * len (p)
-        dir = np.array (dir)
         s = Sommerfeld (4.0, .001, 10.0)
         s.compute ()
-        e = s.sflds (p, dir, 0, obs)
+        e = s.sflds (p, dirvec, obs)
         seglen = 0.08566568262741331
         # Check data entry correctness
         for k in range (13):
@@ -1106,5 +1107,52 @@ class Test_Base:
         cnd = norton == 1
         assert e [cnd] * seglen == pytest.approx (e_exp [cnd], rel = 2e-2)
     # end def test_sflds
+
+    def test_direct_field (self):
+        e1 = np.array \
+            ([ [ [0j, 1033.84677189 +839.83434586j, 0j]
+               , [0j, 1107.21046542+1523.94446675j, 0j]
+               , [0j, 1033.84677189 +839.83434586j, 0j]
+               , [0j, 1107.21046542+1523.94446675j, 0j]
+               , [0j, 1107.21046542+1523.94446675j, 0j]
+               , [0j, 1033.84677189 +839.83434586j, 0j]
+               , [0j, 1107.21046542+1523.94446675j, 0j]
+               , [0j, 1033.84677189 +839.83434586j, 0j]
+               ]
+            ])
+        e2 = np.array \
+            ([ [ [0j, 0j, 1033.84677189 +839.83434586j]
+               , [0j, 0j, 1107.21046542+1523.94446675j]
+               , [0j, 0j, 1033.84677189 +839.83434586j]
+               , [0j, 0j, 1107.21046542+1523.94446675j]
+               , [0j, 0j, 1107.21046542+1523.94446675j]
+               , [0j, 0j, 1033.84677189 +839.83434586j]
+               , [0j, 0j, 1107.21046542+1523.94446675j]
+               , [0j, 0j, 1033.84677189 +839.83434586j]
+               ]
+            ])
+        # Simple dipole at (0, 0, 0.05) in y-direction as source
+        h = 0.05
+        p = np.array ([[0, 0, h]])
+        dirvec = np.array ([[0, 1, 0]])
+        # Points around source, avoiding source itself
+        obs = np.array \
+            ([ [-.1, -.1, h]
+             , [0.0, -.1, h]
+             , [ .1, -.1, h]
+             , [-.1, 0.0, h]
+             , [ .1, 0.0, h]
+             , [-.1,  .1, h]
+             , [0.0,  .1, h]
+             , [ .1,  .1, h]
+             ])
+        s = Sommerfeld (4.0, .001, 10.0)
+        s.compute ()
+        e = s.direct_field (p, dirvec, obs)
+        assert e == pytest.approx (e1, rel = 1e-8)
+        dirvec = np.array ([[0, 0, 1]])
+        e = s.direct_field (p, dirvec, obs)
+        assert e == pytest.approx (e2, rel = 1e-8)
+    # end def test_direct_field
 
 # end class Test_Base
