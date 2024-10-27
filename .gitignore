@@ -1,2 +1,4 @@
 .*.swp
+stat*
 __pycache__
+README.html

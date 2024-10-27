@@ -95,11 +95,12 @@ def main (argv = sys.argv [1:]):
         ax.plot_surface (xx [0], zz [0], ef)
         plt.show ()
     else:
+        cfg = dict (config = dict (displaylogo = False))
         fig = go.Figure (data = [go.Surface(x = xx[0], y = zz [0], z = ef)])
         layout = dict (plotly_default)
         layout ['layout'].update (title = dict (text = title))
         fig.update (layout)
-        fig.show ()
+        fig.show (**cfg)
 
 if __name__ == '__main__':
     main (sys.argv [1:])
