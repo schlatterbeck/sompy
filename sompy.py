@@ -322,7 +322,6 @@ class Sommerfeld:
         rho [cnd] = rho [cnd] / rh [cnd, None]
         cnd   = np.logical_not (cnd)
         rho  [cnd] = 0
-        r     = np.sqrt (zp * zp + rh * rh)
         # Here we would use the lumped current approximation for r > 1
         # see below
         tezk = self.eksc (zp, rh)
@@ -331,6 +330,7 @@ class Sommerfeld:
         # We instead *always* use the exact version because we do not
         # need to integrate.
         if 0:
+            r     = np.sqrt (zp * zp + rh * rh)
             rmag  = 2 * np.pi * r
             cth   = zp / r
             px    = rh / r
@@ -343,9 +343,12 @@ class Sommerfeld:
         tk    = tezk [..., None] * dirvec [:, None, :] \
               + terk [..., None] * rho
         # Finally compute projection of field onto observation segment
+        # Note that [cabi, sabi, salpi] is already a unit vector so we
+        # can simply use the dot product.
         # See line ww77 in function CMWW, original comment:
         # Electric field tangent to segment I is computed
         # etk = exk * cabi + eyk * sabi + ezk * salpi
+        # Not needed here we don't specify orientation of probe.
         return tk
     # end def direct_field
 
@@ -390,8 +393,7 @@ class Sommerfeld:
         # this is done by routine GX for z1 and z2 originally
         # where z1 and z2 are the segment ends, then gz below is
         # integrated from z1 to z2.
-        r2   = z * z + rh * rh
-        r    = np.sqrt (r2)
+        r    = np.linalg.norm ([z, rh], axis = 0)
         rkz  = xk * r
         gz   = np.exp (-1j * rkz) / r
         ezk  = con * xk * xk * gz
@@ -532,16 +534,18 @@ class Sommerfeld:
         res  = z
         pow  = z
         term = np.zeros (z.shape, dtype = complex)
-        tms  = np.zeros (z.shape, dtype = complex)
-        sms  = np.zeros (z.shape, dtype = complex)
+        tms  = np.zeros (z.shape)
+        sms  = np.zeros (z.shape)
         cnd  = np.ones  (z.shape, dtype = bool)
+        div  = np.zeros (z.shape)
         for i in range (100):
             pow  [cnd] = -pow [cnd] * zs [cnd] / (i + 1)
             term [cnd] = pow [cnd] / (2 * (i + 1) + 1)
             res  [cnd] = res [cnd] + term [cnd]
             tms  [cnd] = (term [cnd] * np.conjugate (term [cnd])).real
             sms  [cnd] = (res  [cnd] * np.conjugate (res  [cnd])).real
-            cnd [tms / sms < 1e-12] = False
+            div  [cnd] = (tms [cnd] / sms [cnd])
+            cnd [div < 1e-12] = False
             if not cnd.any ():
                 break
         sp = np.sqrt (np.pi)
